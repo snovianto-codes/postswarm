@@ -52,7 +52,7 @@ Open **http://localhost:8080**
 bash stop.sh
 ```
 
-Logs are written to `logs/*.log` (one file per agent). If agents return generic fallback output, restart with `bash stop.sh && bash start.sh` — this usually means a stale process hit a rate limit.
+Logs are written to `logs/*.log` (one file per agent). If the output is blank or agents complete suspiciously fast, restart with `bash stop.sh && bash start.sh` — this usually means a stale process hit a rate limit.
 
 ---
 
