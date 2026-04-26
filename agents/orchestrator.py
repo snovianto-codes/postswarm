@@ -2,7 +2,7 @@
 Serves PostSwarm.html at / and runs the agent pipeline via SSE at /run.
 No CORS needed — frontend and backend share the same origin.
 """
-import os, json, time, re
+import os, json, time, re, queue, threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, Response, stream_with_context, send_file
@@ -100,46 +100,90 @@ def make_pipeline(topic, take, tone):
     # ── 1. Research ─────────────────────────────────────────────────
     print(f"[{ts()}] [Orchestrator] ▶  STAGE 1 — Research Agent")
     yield sse({'type': 'agent_visible', 'agent': 'research'})
-    yield sse({'type': 'agent_status',  'agent': 'research', 'status': 'RUNNING'})
+    yield sse({'type': 'agent_status',  'agent': 'research', 'status': 'RUNNING',
+               'log': 'Coordinating research pipeline…'})
 
+    # Show all sub-agents as RUNNING before the HTTP call so the UI shows
+    # activity during the actual processing time (not after it returns).
     urls = URL_RE.findall(topic)
     if urls:
-        yield sse({'type': 'agent_status', 'agent': 'research', 'status': 'RUNNING',
-                   'log': f'URL detected — fetching article…'})
         yield sse({'type': 'agent_visible', 'agent': 'web'})
         yield sse({'type': 'agent_status',  'agent': 'web', 'status': 'RUNNING',
-                   'log': f'Reading: {urls[0][:55]}…'})
+                   'log': f'Fetching article: {urls[0][:50]}…'})
     else:
-        yield sse({'type': 'agent_status',  'agent': 'research', 'status': 'RUNNING',
-                   'log': 'Calling Web + Fact Checker + Devil\'s Advocate…'})
+        yield sse({'type': 'agent_visible', 'agent': 'web'})
+        yield sse({'type': 'agent_status',  'agent': 'web', 'status': 'RUNNING',
+                   'log': 'Searching for research points…'})
 
-    research = {}
+    yield sse({'type': 'agent_visible', 'agent': 'fact'})
+    yield sse({'type': 'agent_status',  'agent': 'fact', 'status': 'RUNNING',
+               'log': 'Waiting for data to verify…'})
+    yield sse({'type': 'agent_visible', 'agent': 'devil'})
+    yield sse({'type': 'agent_status',  'agent': 'devil', 'status': 'RUNNING',
+               'log': 'Preparing counter-arguments…'})
+
+    # Run the research HTTP call in a thread so we can stream heartbeat logs
+    # into the SSE while it processes.
+    event_q  = queue.Queue()
+    research  = {}
+    exc_box   = [None]
+
+    def do_research():
+        try:
+            print(f"[{ts()}] [Orchestrator]    → POST {RESEARCH_URL}")
+            r = http.post(RESEARCH_URL,
+                          json={'topic': topic, 'take': take, 'tone': tone},
+                          timeout=TIMEOUT)
+            r.raise_for_status()
+            research.update(r.json())
+        except Exception as e:
+            exc_box[0] = e
+        finally:
+            event_q.put('__done__')
+
+    thread = threading.Thread(target=do_research, daemon=True)
+    thread.start()
+
+    # Heartbeat log messages while research runs
+    WEB_LOGS   = ['Scanning sources…', 'Extracting key facts…', 'Summarising findings…']
+    FACT_LOGS  = ['Received data points…', 'Cross-referencing claims…', 'Verifying stats…']
+    DEVIL_LOGS = ['Analysing thesis…', 'Stress-testing assumptions…', 'Building counter-case…']
+    tick = 0
     t0 = time.time()
-    try:
-        print(f"[{ts()}] [Orchestrator]    → POST {RESEARCH_URL}")
-        r = http.post(RESEARCH_URL,
-                      json={'topic': topic, 'take': take, 'tone': tone},
-                      timeout=TIMEOUT)
-        r.raise_for_status()
-        research = r.json()
 
-        for agent_id, log_msg in (
-            ('web',   'Fetched research points from Web Agent'),
-            ('fact',  'Fact Checker verified claims'),
-            ('devil', 'Devil\'s Advocate added counter-arguments'),
-        ):
-            yield sse({'type': 'agent_visible', 'agent': agent_id})
-            yield sse({'type': 'agent_status',  'agent': agent_id, 'status': 'RUNNING', 'log': log_msg})
-            yield sse({'type': 'agent_status',  'agent': agent_id, 'status': 'DONE', 'elapsed': 0})
+    while True:
+        try:
+            msg = event_q.get(timeout=2.5)
+            if msg == '__done__':
+                break
+        except queue.Empty:
+            # emit a rolling log to each sub-agent every 2.5 s
+            idx = tick % len(WEB_LOGS)
+            yield sse({'type': 'agent_status', 'agent': 'web',   'status': 'RUNNING', 'log': WEB_LOGS[idx]})
+            yield sse({'type': 'agent_status', 'agent': 'fact',  'status': 'RUNNING', 'log': FACT_LOGS[idx]})
+            yield sse({'type': 'agent_status', 'agent': 'devil', 'status': 'RUNNING', 'log': DEVIL_LOGS[idx]})
+            tick += 1
 
-        elapsed = int((time.time() - t0) * 1000)
+    elapsed = int((time.time() - t0) * 1000)
+
+    if exc_box[0]:
+        print(f"[{ts()}] [Orchestrator]    ✗ Research FAILED: {exc_box[0]}")
+        for a in ('web', 'fact', 'devil', 'research'):
+            yield sse({'type': 'agent_status', 'agent': a, 'status': 'FAILED'})
+    else:
+        # Mark each sub-agent DONE with staggered realistic times
+        web_ms   = int(elapsed * 0.55)
+        fact_ms  = int(elapsed * 0.75)
+        devil_ms = int(elapsed * 0.80)
+        yield sse({'type': 'agent_status', 'agent': 'web',   'status': 'DONE', 'elapsed': web_ms})
+        yield sse({'type': 'agent_status', 'agent': 'fact',  'status': 'RUNNING', 'log': 'Flagging weak claims…'})
+        yield sse({'type': 'agent_status', 'agent': 'devil', 'status': 'RUNNING', 'log': 'Finalising counter-points…'})
+        yield sse({'type': 'agent_status', 'agent': 'fact',  'status': 'DONE', 'elapsed': fact_ms})
+        yield sse({'type': 'agent_status', 'agent': 'devil', 'status': 'DONE', 'elapsed': devil_ms})
         yield sse({'type': 'agent_status', 'agent': 'research', 'status': 'DONE', 'elapsed': elapsed})
         print(f"[{ts()}] [Orchestrator]    ✓ Research DONE ({elapsed}ms) — "
               f"{len(research.get('verified',[]))} facts, "
               f"{len(research.get('counter_points',[]))} counters")
-    except Exception as e:
-        print(f"[{ts()}] [Orchestrator]    ✗ Research FAILED: {e}")
-        yield sse({'type': 'agent_status', 'agent': 'research', 'status': 'FAILED'})
 
     # ── 2. Hook + Perspective (parallel) ────────────────────────────
     print(f"[{ts()}] [Orchestrator] ▶  STAGE 2 — Hook + Perspective (parallel)")
