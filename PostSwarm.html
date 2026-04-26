@@ -388,12 +388,12 @@ function App() {
     setMode('live');
     t0Ref.current = Date.now();
 
-    const url = new URL(`${BACKEND}/run`);
-    url.searchParams.set('topic', topic || 'Kimi K2.6 launched with 300 AI sub-agents');
-    url.searchParams.set('take',  take  || 'most teams aren\'t ready');
-    url.searchParams.set('tone',  tone);
-
-    const evs = new EventSource(url.toString());
+    const params = new URLSearchParams({
+      topic: topic || 'Kimi K2.6 launched with 300 AI sub-agents',
+      take:  take  || "most teams aren't ready",
+      tone,
+    });
+    const evs = new EventSource(`${BACKEND}/run?${params.toString()}`);
     evsRef.current = evs;
 
     evs.onmessage = (e) => {
