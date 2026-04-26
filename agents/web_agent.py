@@ -178,13 +178,7 @@ Return ONLY the JSON array, no other text."""
             # fallback: return raw sentences from article as points
             sentences = [s.strip() for s in article_text.split('.') if len(s.strip()) > 40][:5]
             return jsonify(data_points=sentences or [article_text[:200]], source_url=urls[0] if urls else None)
-        return jsonify(data_points=[
-            "AI adoption in enterprise is accelerating, with 65% of organizations using AI in at least one function (McKinsey 2024).",
-            "Most AI projects fail in production — only 54% of AI pilots are scaled (Gartner).",
-            "Southeast Asia AI market projected to reach $1T contribution by 2030 (Google-Temasek-Bain).",
-            "The average enterprise uses 3-5 AI tools, but fewer than 30% are integrated into core workflows.",
-            "AI skill gaps remain the #1 barrier to adoption, cited by 60% of business leaders.",
-        ], source_url=None)
+        return jsonify(data_points=[], source_url=None)
 
 
 if __name__ == '__main__':

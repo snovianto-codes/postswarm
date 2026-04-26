@@ -65,13 +65,7 @@ Return ONLY the JSON array, no other text."""
     except Exception as e:
         print(f"[Hook Agent] [ERROR] {type(e).__name__}: {e}")
         print(traceback.format_exc())
-        return jsonify(hooks=[
-            "300 AI sub-agents. Most teams can't handle 3.",
-            "Impressive demo. Disaster at 3am on a Tuesday.",
-            "The benchmark looks great. Your team isn't ready.",
-            "Everyone's talking about the launch. Nobody's asking who maintains it.",
-            "New AI model dropped. Your governance hasn't caught up.",
-        ])
+        return jsonify(hooks=[])
 
 
 if __name__ == '__main__':

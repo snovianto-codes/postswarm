@@ -119,24 +119,7 @@ Return ONLY the post text. No preamble, no explanation."""
             print(f"[Writer Agent] [ERROR] {model_name} failed: {type(e).__name__}: {e}")
             print(traceback.format_exc())
             if model_name == model_sequence[-1]:
-                hook_line  = hooks[0] if hooks else "The benchmark looks great. Your team isn't ready."
-                fact_line  = verified[0] if verified else "AI adoption gaps remain the biggest barrier to real ROI."
-                counter    = counters[0] if counters else "But buying the tool is the easy part. Changing how people work is not."
-                take_line  = f"{take.capitalize()}." if take else "Impressive tech. But most teams aren't ready."
-                fallback_post = f"""{hook_line}
-
-{take_line}
-
-{fact_line}
-
-{counter}
-
-In Singapore and across SEA, I see this pattern repeat: pilot succeeds, scale fails.
-
-What's the one thing your team needs before deploying this responsibly?
-
-#AI #Leadership #SEA #FutureOfWork"""
-                return jsonify(post=fallback_post, model_used='fallback')
+                return jsonify(post='', model_used='fallback')
 
 
 if __name__ == '__main__':

@@ -71,11 +71,7 @@ Return ONLY the JSON array, no other text."""
     except Exception as e:
         print(f"[Perspective Agent] [ERROR] {type(e).__name__}: {e}")
         print(traceback.format_exc())
-        return jsonify(insights=[
-            "In SEA, AI adoption is slower due to data governance concerns and mixed digital maturity across team members.",
-            "Singapore teams often over-invest in tools and under-invest in the change management needed to actually use them.",
-            "The biggest ROI comes from automating repetitive reporting and admin — not from complex agentic deployments.",
-        ])
+        return jsonify(insights=[])
 
 
 if __name__ == '__main__':

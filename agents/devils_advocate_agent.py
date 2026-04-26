@@ -57,11 +57,7 @@ Return ONLY the JSON array, no other text."""
     except Exception as e:
         print(f"[Devil's Advocate] [ERROR] {type(e).__name__}: {e}")
         print(traceback.format_exc())
-        return jsonify(counter_points=[
-            "Most teams lack the observability tools to debug multi-agent failures before they hit production.",
-            "Benchmarks measure capability, not reliability — enterprise teams need the latter far more.",
-            "The coordination overhead of sub-agent systems often negates the speed gains they promise.",
-        ])
+        return jsonify(counter_points=[])
 
 
 if __name__ == '__main__':
