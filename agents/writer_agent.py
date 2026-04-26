@@ -43,13 +43,15 @@ def run():
     print(f"[Writer Agent] ← Received | Writing post for: {topic[:50]}...")
 
     voice = load_voice()
-    verified  = research.get('verified', [])
-    counters  = research.get('counter_points', [])
+    verified   = research.get('verified', [])
+    counters   = research.get('counter_points', [])
+    source_url = research.get('source_url')
 
     verified_text  = '\n'.join(f"- {p}" for p in verified[:3])   if verified  else "No verified data."
     counters_text  = '\n'.join(f"- {p}" for p in counters[:2])   if counters  else "None."
     insights_text  = '\n'.join(f"- {p}" for p in insights[:2])   if insights  else "None."
     hooks_text     = '\n'.join(f"{i+1}. {h}" for i, h in enumerate(hooks[:5])) if hooks else "No hooks provided."
+    source_note    = f"\nSource article: {source_url}\nUse findings from this article as the basis for the post — make it clear the post is a reaction to this specific article." if source_url else ""
 
     prompt = f"""You are ghostwriting a LinkedIn post for the author described in this voice profile:
 
@@ -60,7 +62,7 @@ def run():
 ## Assignment
 Topic: {topic}
 Author's take: {take if take else "Be direct and honest"}
-Tone: {tone}
+Tone: {tone}{source_note}
 
 ## Research to use
 Verified facts:

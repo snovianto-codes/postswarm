@@ -55,9 +55,15 @@ def run():
 
     # Step 1: call Web Agent first to get raw data
     data_points = []
+    source_url  = None
     try:
-        data_points = call_web(topic)
-        print(f"[Research Agent] Web Agent returned {len(data_points)} points")
+        web_resp    = http.post(WEB_URL, json={'topic': topic}, timeout=TIMEOUT)
+        web_resp.raise_for_status()
+        web_json    = web_resp.json()
+        data_points = web_json.get('data_points', [])
+        source_url  = web_json.get('source_url')
+        print(f"[Research Agent] Web Agent returned {len(data_points)} points"
+              + (f" (source: {source_url})" if source_url else ""))
     except Exception as e:
         print(f"[Research Agent] [ERROR] Web Agent failed: {e}")
 
@@ -90,6 +96,7 @@ def run():
         'data_points':    data_points,
         'verified':       verified,
         'counter_points': counter_points,
+        'source_url':     source_url,
     }
     print(f"[Research Agent] ✓ Research package assembled")
     return jsonify(package)

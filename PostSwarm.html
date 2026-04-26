@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PostSwarm</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg: '#0a0a0a',
+          card: '#141414',
+          border: '#1f1f1f',
+        },
+        fontFamily: { sans: ['Inter', 'sans-serif'] },
+      }
+    }
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; background: #0a0a0a; }
+  body { font-family: 'Inter', sans-serif; color: #e5e5e5; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0a; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 99px; }
+  textarea, select { outline: none; }
+  textarea::placeholder { color: #383838; }
+
+  @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+  @keyframes slideUp { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:translateY(0) } }
+  @keyframes pulseRing {
+    0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0); }
+    50%      { box-shadow: 0 0 0 5px rgba(124,58,237,0.22); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0 }
+    to   { background-position:  200% 0 }
+  }
+  @keyframes bounce3 {
+    0%,80%,100% { transform: translateY(0) }
+    40%         { transform: translateY(-4px) }
+  }
+
+  .anim-fade   { animation: fadeIn  0.3s ease forwards; }
+  .anim-slide  { animation: slideUp 0.4s cubic-bezier(.16,1,.3,1) forwards; opacity:0; }
+  .anim-slide-delay-1 { animation: slideUp 0.4s cubic-bezier(.16,1,.3,1) 0.1s forwards; opacity:0; }
+
+  .running-ring { animation: pulseRing 1.4s ease-in-out infinite; }
+
+  .running-card { background:#13101f; border-color:#2a1f50; box-shadow: 0 0 0 1px rgba(124,58,237,.35), 0 0 20px rgba(124,58,237,.1); }
+  .done-card    { background:#0d1410; border-color:#1a2e22; box-shadow: 0 0 0 1px rgba(16,185,129,.25), 0 0 14px rgba(16,185,129,.07); }
+  .failed-card  { background:#150d0d; border-color:#2e1a1a; box-shadow: 0 0 0 1px rgba(239,68,68,.3); }
+  .idle-card    { background:#111; border-color:#1a1a1a; }
+
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; }
+  .dot-bounce { animation: bounce3 0.8s ease infinite; }
+
+  .launch-btn {
+    background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 60%, #5b21b6 100%);
+    transition: transform .18s, box-shadow .18s;
+    position: relative; overflow: hidden;
+  }
+  .launch-btn::after {
+    content:''; position:absolute; inset:0;
+    background: linear-gradient(135deg, rgba(255,255,255,.08) 0%, transparent 60%);
+    pointer-events:none;
+  }
+  .launch-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 24px rgba(124,58,237,.38); }
+  .launch-btn:active:not(:disabled) { transform:translateY(0); }
+  .launch-btn:disabled { opacity:.45; cursor:not-allowed; }
+
+  .connector {
+    position:absolute; left:18px; width:1px; top:-20px; height:20px;
+    background: linear-gradient(to bottom, #1f1f1f, #2a2a2a);
+    transition: background .5s;
+  }
+  .connector-lit { background: linear-gradient(to bottom, #7c3aed88, #7c3aed33); box-shadow:0 0 6px rgba(124,58,237,.3); }
+
+  .shimmer-bg {
+    background: linear-gradient(90deg,#1a1a1a 25%,#252525 50%,#1a1a1a 75%);
+    background-size:200% 100%;
+    animation: shimmer 1.6s linear infinite;
+    border-radius:4px;
+  }
+
+  .mode-live { color:#10b981; }
+  .mode-demo { color:#f59e0b; }
+
+  .output-panel { animation: slideUp 0.5s cubic-bezier(.16,1,.3,1) forwards; opacity:0; }
+
+  .spin { animation: spin .9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .copy-btn, .regen-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding: 8px 16px; border-radius:10px; font-size:13px; font-weight:500;
+    border: 1px solid #252525; background:#1a1a1a; color:#aaa;
+    cursor:pointer; transition:background .15s, color .15s;
+  }
+  .copy-btn:hover, .regen-btn:hover { background:#222; color:#ddd; }
+  .copy-btn.copied { color:#10b981; border-color:#10b98133; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ─────────────────────────── constants ─────────────────────────── */
+
+const BACKEND = '';
+
+const AGENT_DEFS = [
+  { id:'research',    label:'Research Agent',         emoji:'🔍', calledBy:'Orchestrator'    },
+  { id:'web',         label:'Web Agent',              emoji:'🌐', calledBy:'Research Agent'  },
+  { id:'fact',        label:'Fact Checker Agent',     emoji:'✅', calledBy:'Research Agent'  },
+  { id:'devil',       label:"Devil's Advocate Agent", emoji:'😈', calledBy:'Research Agent'  },
+  { id:'perspective', label:'Perspective Agent',      emoji:'👁',  calledBy:'Orchestrator'    },
+  { id:'hook',        label:'Hook Agent',             emoji:'🪝', calledBy:'Orchestrator'    },
+  { id:'writer',      label:'Writer Agent',           emoji:'✍️', calledBy:'Orchestrator'    },
+];
+
+/* Demo simulation config */
+const DEMO_GROUPS = [
+  ['research'],
+  ['web','fact','devil'],
+  ['perspective'],
+  ['hook'],
+  ['writer'],
+];
+const DEMO_LOGS = {
+  research:    ['Scanning LinkedIn trends…','Extracting context from public posts…','Building knowledge graph…'],
+  web:         ['Fetching recent articles…','Scraping 12 URLs…','Summarising sources…'],
+  fact:        ['Cross-referencing claims…','Verifying stats and figures…','Flagging 1 weak claim…'],
+  devil:       ['Identifying counter-arguments…','Stress-testing main thesis…','Adding friction points…'],
+  perspective: ['Mapping audience segments…','Selecting POV: practitioner…','Framing angle confirmed…'],
+  hook:        ['Generating 5 hook variants…','Scoring by engagement signal…','Hook selected: contrast opener…'],
+  writer:      ['Drafting post structure…','Applying tone…','Polishing voice and rhythm…','Final draft ready ✓'],
+};
+const DEMO_DURATIONS = { research:1800,web:2400,fact:1600,devil:2000,perspective:1400,hook:1200,writer:2800 };
+const DEMO_POST = (topic, take, tone) =>
+`${topic||'Kimi K2.6'} just launched with 300 AI sub-agents.
+
+The demos are impressive. The benchmarks are real.
+
+But here's what nobody's saying: most teams don't have the infrastructure—or the discipline—to deploy this responsibly.
+
+Sub-agent systems fail in ways that are hard to debug, expensive to fix, and invisible until they're catastrophic. You don't just need the model. You need:
+
+→ Observability into every agent call
+→ Guardrails that actually work under load
+→ A team that understands failure modes
+→ Governance before you hit production
+
+${take ? `My take: ${take}. ` : ''}The gap between "it works in a demo" and "it works at 3am on a Tuesday" is where most AI projects go to die.
+
+Excited about the tech. Skeptical about the readiness.
+
+What's your team actually doing to prepare for agentic AI?
+
+#AI #AgentAI #EnterpriseAI #LLM`;
+
+/* ─────────────────────────── helpers ───────────────────────────── */
+
+const initStates = () => Object.fromEntries(
+  AGENT_DEFS.map(a => [a.id, { status:'IDLE', logs:[], elapsed:0, startTime:0 }])
+);
+
+/* ─────────────────────────── sub-components ────────────────────── */
+
+function SwarmIcon({ size=22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 22 22" fill="none">
+      <circle cx="11" cy="5" r="2.5" fill="#7c3aed" opacity=".9"/>
+      <circle cx="4" cy="16" r="2.5" fill="#7c3aed" opacity=".7"/>
+      <circle cx="18" cy="16" r="2.5" fill="#7c3aed" opacity=".7"/>
+      <circle cx="11" cy="13" r="2" fill="#a855f7" opacity=".45"/>
+      <line x1="11" y1="7.5" x2="11" y2="11" stroke="#7c3aed" strokeWidth="1" strokeOpacity=".5"/>
+      <line x1="11" y1="13" x2="4"  y2="13.5" stroke="#7c3aed" strokeWidth="1" strokeOpacity=".4"/>
+      <line x1="11" y1="13" x2="18" y2="13.5" stroke="#7c3aed" strokeWidth="1" strokeOpacity=".4"/>
+    </svg>
+  );
+}
+
+function StatusBadge({ status }) {
+  const cfg = {
+    IDLE:    { cls:'bg-[#1c1c1c] text-[#555]',           dotCls:'bg-[#333]' },
+    RUNNING: { cls:'bg-[#1e1530] text-violet-400',        dotCls:'bg-violet-500' },
+    DONE:    { cls:'bg-[#0d1f17] text-emerald-400',       dotCls:'bg-emerald-500' },
+    FAILED:  { cls:'bg-[#1f0d0d] text-red-400',           dotCls:'bg-red-500' },
+  }[status] || { cls:'bg-[#1c1c1c] text-[#555]', dotCls:'bg-[#333]' };
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-widest ${cfg.cls}`}>
+      <span className={`dot ${cfg.dotCls} ${status==='RUNNING'?'dot-bounce':''}`} style={status==='RUNNING'?{animationDelay:'0s'}:{}}/>
+      {status}
+    </span>
+  );
+}
+
+function AgentCard({ agent, state, isFirst, prevDone }) {
+  const { label, emoji, calledBy } = agent;
+  const { status, logs, elapsed, startTime } = state;
+  const [liveMs, setLiveMs] = useState(0);
+
+  useEffect(() => {
+    if (status !== 'RUNNING') return;
+    const iv = setInterval(() => setLiveMs(Date.now() - startTime), 80);
+    return () => clearInterval(iv);
+  }, [status, startTime]);
+
+  const ms = status === 'RUNNING' ? liveMs : elapsed;
+
+  const cardCls = {
+    IDLE:    'idle-card',
+    RUNNING: 'running-card running-ring',
+    DONE:    'done-card',
+    FAILED:  'failed-card',
+  }[status] || 'idle-card';
+
+  const iconBg = {
+    IDLE:    'bg-[#1c1c1c]',
+    RUNNING: 'bg-violet-500/15',
+    DONE:    'bg-emerald-500/10',
+    FAILED:  'bg-red-500/10',
+  }[status];
+
+  return (
+    <div className="relative anim-slide">
+      {!isFirst && <div className={`connector ${prevDone?'connector-lit':''}`} />}
+      <div className={`rounded-xl p-4 border transition-all duration-500 ${cardCls}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-base flex-shrink-0 ${iconBg}`}>
+              {emoji}
+            </div>
+            <div>
+              <div className="font-semibold text-sm text-[#e5e5e5]">{label}</div>
+              <div className="text-[11px] text-[#444] mt-0.5">Called by {calledBy}</div>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+            <StatusBadge status={status} />
+            {(status==='RUNNING'||status==='DONE') && (
+              <span className="text-[10px] text-[#555] font-mono">{(ms/1000).toFixed(1)}s</span>
+            )}
+          </div>
+        </div>
+
+        {(status==='RUNNING'||status==='DONE') && logs.length>0 && (
+          <div className="mt-3 space-y-1">
+            {logs.map((line,i) => (
+              <div key={i} className="flex items-start gap-2 anim-fade">
+                <span className="text-violet-600 text-[10px] mt-0.5 flex-shrink-0">›</span>
+                <span className="text-[11px] text-[#666] font-mono leading-relaxed">{line}</span>
+              </div>
+            ))}
+            {status==='RUNNING' && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-violet-600 text-[10px]">›</span>
+                <div className="flex gap-1">
+                  {[0,1,2].map(i=>(
+                    <div key={i} className="w-1 h-1 rounded-full bg-violet-500 dot-bounce"
+                      style={{animationDelay:`${i*.15}s`}}/>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutputPanel({ post, totalMs, onRegenerate }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(post).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); });
+  };
+  return (
+    <div className="output-panel rounded-2xl border border-[#1f1f1f] bg-[#111] overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a1a1a]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full bg-emerald-500" style={{boxShadow:'0 0 8px rgba(16,185,129,.7)'}}/>
+          <span className="text-sm font-semibold text-[#ccc]">LinkedIn Post Ready</span>
+        </div>
+        <span className="text-[11px] text-[#444] font-mono">
+          7 agents · {(totalMs/1000).toFixed(1)}s
+        </span>
+      </div>
+      <div className="px-5 py-5">
+        <pre className="text-[13.5px] leading-[1.78] text-[#c8c8c8] whitespace-pre-wrap font-sans">{post}</pre>
+      </div>
+      <div className="px-5 py-4 border-t border-[#1a1a1a] flex gap-3">
+        <button className={`copy-btn ${copied?'copied':''}`} onClick={copy}>
+          {copied
+            ? <><CheckIcon/> Copied!</>
+            : <><CopyIcon/> Copy to clipboard</>
+          }
+        </button>
+        <button className="regen-btn" onClick={onRegenerate}>
+          <RefreshIcon/> Regenerate
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CopyIcon()    { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2"/><path d="M1.5 8.5V2C1.5 1.7 1.7 1.5 2 1.5h6.5" strokeLinecap="round"/></svg>; }
+function RefreshIcon() { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M11 6.5A4.5 4.5 0 1 1 6.5 2" strokeLinecap="round"/><path d="M11 2v4.5h-4.5" strokeLinecap="round" strokeLinejoin="round"/></svg>; }
+function CheckIcon()   { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#10b981" strokeWidth="1.8"><path d="M2 7l3.5 3.5L11 3.5" strokeLinecap="round" strokeLinejoin="round"/></svg>; }
+
+/* ─────────────────────────── main app ──────────────────────────── */
+
+function App() {
+  const [topic, setTopic]  = useState('');
+  const [take,  setTake]   = useState('');
+  const [tone,  setTone]   = useState('Skeptical');
+
+  const [phase,        setPhase]        = useState('idle');   // idle | running | done
+  const [agentStates,  setAgentStates]  = useState(initStates);
+  const [visibleAgents,setVisibleAgents]= useState([]);
+  const [finalPost,    setFinalPost]    = useState('');
+  const [totalMs,      setTotalMs]      = useState(0);
+  const [mode,         setMode]         = useState(null);     // null | 'live' | 'demo'
+  const [backendStatus,setBackendStatus]= useState('checking'); // checking | online | offline
+  const [toast,        setToast]        = useState(null);      // null | {msg, color}
+  const prevStatus = useRef('checking');
+
+  const timers  = useRef([]);
+  const evsRef  = useRef(null);
+  const t0Ref   = useRef(0);
+
+  /* check backend — retry every 3s until online */
+  useEffect(() => {
+    let cancelled = false;
+    const check = () => {
+      fetch(`${BACKEND}/health`, { signal: AbortSignal.timeout(2500) })
+        .then(r => r.ok ? r.json() : Promise.reject())
+        .then(() => {
+          if (!cancelled) {
+            if (prevStatus.current !== 'online') {
+              setToast({ msg: '✅ Backend connected — running real agents', color: '#10b981' });
+              setTimeout(() => setToast(null), 4000);
+            }
+            prevStatus.current = 'online';
+            setBackendStatus('online');
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            if (prevStatus.current !== 'offline') {
+              setToast({ msg: '⚠️ Backend offline — running in demo mode', color: '#f59e0b' });
+              setTimeout(() => setToast(null), 4000);
+            }
+            prevStatus.current = 'offline';
+            setBackendStatus('offline');
+            setTimeout(check, 3000);
+          }
+        });
+    };
+    check();
+    return () => { cancelled = true; };
+  }, []);
+
+  const addTimer = (fn, ms) => { const id=setTimeout(fn,ms); timers.current.push(id); };
+  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current=[]; };
+
+  const updateAgent = (id, patch) =>
+    setAgentStates(s => ({ ...s, [id]: { ...s[id], ...patch } }));
+
+  const appendLog = (id, line) =>
+    setAgentStates(s => ({ ...s, [id]: { ...s[id], logs:[...s[id].logs, line] } }));
+
+  /* ── LIVE MODE via SSE ── */
+  const runLive = () => {
+    setPhase('running');
+    setMode('live');
+    t0Ref.current = Date.now();
+
+    const url = new URL(`${BACKEND}/run`);
+    url.searchParams.set('topic', topic || 'Kimi K2.6 launched with 300 AI sub-agents');
+    url.searchParams.set('take',  take  || 'most teams aren\'t ready');
+    url.searchParams.set('tone',  tone);
+
+    const evs = new EventSource(url.toString());
+    evsRef.current = evs;
+
+    evs.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+
+      if (msg.type === 'agent_visible') {
+        setVisibleAgents(v => v.includes(msg.agent) ? v : [...v, msg.agent]);
+      }
+
+      if (msg.type === 'agent_status') {
+        const { agent, status, log, elapsed } = msg;
+        if (!visibleAgents.includes(agent))
+          setVisibleAgents(v => [...v, agent]);
+
+        if (status === 'RUNNING') {
+          updateAgent(agent, { status:'RUNNING', startTime: Date.now() });
+        } else if (status === 'DONE') {
+          updateAgent(agent, { status:'DONE', elapsed: elapsed||0 });
+        } else if (status === 'FAILED') {
+          updateAgent(agent, { status:'FAILED' });
+        }
+        if (log) appendLog(agent, log);
+      }
+
+      if (msg.type === 'done') {
+        setFinalPost(msg.post || '');
+        setTotalMs(Date.now() - t0Ref.current);
+        setPhase('done');
+        evs.close();
+      }
+
+      if (msg.type === 'error') {
+        console.error('Backend error:', msg.message);
+        evs.close();
+        runDemo(); // graceful fallback
+      }
+    };
+
+    evs.onerror = () => {
+      evs.close();
+      console.warn('SSE connection lost, falling back to demo');
+      runDemo();
+    };
+  };
+
+  /* ── DEMO MODE (mock) ── */
+  const runDemo = useCallback(() => {
+    clearTimers();
+    setPhase('running');
+    setMode('demo');
+    const t0 = Date.now();
+    t0Ref.current = t0;
+    let cursor = 0;
+
+    DEMO_GROUPS.forEach((group) => {
+      const groupStart = cursor;
+      const durations  = group.map(id => DEMO_DURATIONS[id] + (Math.random()*500 - 250));
+      const maxDur     = Math.max(...durations);
+
+      group.forEach((agentId, idx) => {
+        addTimer(() => setVisibleAgents(v => v.includes(agentId)?v:[...v,agentId]),
+          groupStart + idx*130);
+
+        const logs = DEMO_LOGS[agentId];
+        const dur  = durations[idx];
+        const agentStart = groupStart + idx*130 + 220;
+        const logStep = dur / (logs.length + 1);
+
+        addTimer(() => setAgentStates(s=>({...s,[agentId]:{...s[agentId],status:'RUNNING',startTime:Date.now(),logs:[]}})),
+          agentStart);
+
+        logs.forEach((line,li) => {
+          addTimer(() => appendLog(agentId, line), agentStart + logStep*(li+1));
+        });
+
+        addTimer(() => setAgentStates(s=>({...s,[agentId]:{...s[agentId],status:'DONE',elapsed:dur}})),
+          agentStart + dur);
+      });
+
+      cursor = groupStart + maxDur + 320;
+    });
+
+    addTimer(() => {
+      setFinalPost(DEMO_POST(topic, take, tone));
+      setTotalMs(Date.now() - t0);
+      setPhase('done');
+    }, cursor + 150);
+  }, [topic, take, tone]);
+
+  /* ── launch handler ── */
+  const launch = () => {
+    clearTimers();
+    if (evsRef.current) { evsRef.current.close(); evsRef.current=null; }
+    setAgentStates(initStates());
+    setVisibleAgents([]);
+    setFinalPost('');
+
+    if (backendStatus === 'online') {
+      runLive();
+    } else {
+      runDemo();
+    }
+  };
+
+  const handleRegenerate = () => {
+    setPhase('idle');
+    setTimeout(launch, 80);
+  };
+
+  /* pipeline sidebar ticks */
+  const agentStatus = (id) => agentStates[id]?.status || 'IDLE';
+
+  return (
+    <div style={{minHeight:'100vh', display:'flex', flexDirection:'column', background:'#0a0a0a'}}>
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div style={{
+          position:'fixed', top:16, left:'50%', transform:'translateX(-50%)',
+          zIndex:9999, padding:'10px 20px', borderRadius:10,
+          background:'#1a1a1a', border:`1px solid ${toast.color}44`,
+          boxShadow:`0 4px 24px rgba(0,0,0,.5), 0 0 0 1px ${toast.color}33`,
+          color: toast.color, fontSize:13, fontWeight:600,
+          animation:'slideUp 0.3s cubic-bezier(.16,1,.3,1) forwards',
+          whiteSpace:'nowrap',
+        }}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* ── Top bar ── */}
+      <div style={{borderBottom:'1px solid #141414', padding:'10px 24px', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <SwarmIcon/>
+          <span style={{fontWeight:600, fontSize:15, color:'#fff', letterSpacing:'-0.02em'}}>PostSwarm</span>
+          <span style={{color:'#2a2a2a', fontSize:11}}>v1.0</span>
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:16}}>
+          {/* backend indicator */}
+          <div style={{display:'flex', alignItems:'center', gap:6,
+            padding:'4px 10px', borderRadius:99,
+            background: backendStatus==='online' ? 'rgba(16,185,129,.1)' : backendStatus==='offline' ? 'rgba(239,68,68,.08)' : 'rgba(245,158,11,.08)',
+            border: `1px solid ${backendStatus==='online' ? 'rgba(16,185,129,.25)' : backendStatus==='offline' ? 'rgba(239,68,68,.2)' : 'rgba(245,158,11,.2)'}`,
+          }}>
+            <div style={{
+              width:7, height:7, borderRadius:'50%',
+              background: backendStatus==='online' ? '#10b981' : backendStatus==='offline' ? '#ef4444' : '#f59e0b',
+              boxShadow: backendStatus==='online' ? '0 0 6px rgba(16,185,129,.9)' : 'none',
+            }}/>
+            <span style={{fontSize:11, fontWeight:600,
+              color: backendStatus==='online' ? '#10b981' : backendStatus==='offline' ? '#ef4444' : '#f59e0b'}}>
+              {backendStatus==='checking' ? 'Connecting…' : backendStatus==='online' ? 'Backend connected' : 'No backend — demo mode'}
+            </span>
+          </div>
+          <div style={{display:'flex', alignItems:'center', gap:6}}>
+            <div style={{width:6, height:6, borderRadius:'50%', background:'#7c3aed', boxShadow:'0 0 6px rgba(124,58,237,.7)'}}/>
+            <span style={{fontSize:11, color:'#444'}}>7 agents</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <div style={{flex:1, display:'flex', overflow:'hidden', flexWrap:'wrap'}}>
+
+        {/* ══ LEFT PANEL ══ */}
+        <div style={{width:'38%', minWidth:300, borderRight:'1px solid #141414', display:'flex', flexDirection:'column'}}>
+          <div style={{flex:1, overflowY:'auto', padding:'28px 24px', display:'flex', flexDirection:'column', gap:22}}>
+
+            {/* header */}
+            <div>
+              <h1 style={{fontSize:22, fontWeight:700, color:'#fff', letterSpacing:'-0.03em', lineHeight:1.2}}>PostSwarm</h1>
+              <p style={{fontSize:13, color:'#555', marginTop:6, lineHeight:1.6}}>7 agents. One LinkedIn post. Your voice.</p>
+            </div>
+
+            {/* topic */}
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Topic</label>
+              <textarea rows={3} value={topic} onChange={e=>setTopic(e.target.value)}
+                placeholder="Kimi K2.6 just launched with 300 AI sub-agents"
+                style={{background:'#111', border:'1px solid #1f1f1f', borderRadius:12, padding:'12px 14px',
+                  fontSize:13, color:'#ddd', resize:'none', lineHeight:1.6, fontFamily:'Inter,sans-serif',
+                  transition:'border-color .2s'}}
+                onFocus={e=>e.target.style.borderColor='#3d1f7a'}
+                onBlur={e=>e.target.style.borderColor='#1f1f1f'}
+              />
+            </div>
+
+            {/* take */}
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>My Take</label>
+              <textarea rows={3} value={take} onChange={e=>setTake(e.target.value)}
+                placeholder="impressive tech but most teams aren't ready"
+                style={{background:'#111', border:'1px solid #1f1f1f', borderRadius:12, padding:'12px 14px',
+                  fontSize:13, color:'#ddd', resize:'none', lineHeight:1.6, fontFamily:'Inter,sans-serif',
+                  transition:'border-color .2s'}}
+                onFocus={e=>e.target.style.borderColor='#3d1f7a'}
+                onBlur={e=>e.target.style.borderColor='#1f1f1f'}
+              />
+            </div>
+
+            {/* tone */}
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Tone</label>
+              <div style={{position:'relative'}}>
+                <select value={tone} onChange={e=>setTone(e.target.value)}
+                  style={{width:'100%', appearance:'none', background:'#111', border:'1px solid #1f1f1f',
+                    borderRadius:12, padding:'12px 14px', fontSize:13, color:'#ddd',
+                    fontFamily:'Inter,sans-serif', cursor:'pointer'}}>
+                  {['Skeptical','Curious','Excited','Provocative','Balanced'].map(t=>(
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+                <div style={{position:'absolute', right:14, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#555'}}>
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M2 4l3.5 3.5L9 4" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* pipeline */}
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Pipeline</label>
+              <div style={{background:'#0d0d0d', border:'1px solid #181818', borderRadius:12, padding:'10px 12px'}}>
+                {AGENT_DEFS.map(a => {
+                  const st = agentStatus(a.id);
+                  return (
+                    <div key={a.id} style={{display:'flex', alignItems:'center', gap:8, padding:'5px 0'}}>
+                      <span style={{fontSize:13, width:20, textAlign:'center'}}>{a.emoji}</span>
+                      <span style={{fontSize:11, color: st==='DONE'?'#10b981': st==='RUNNING'?'#a78bfa':'#555', flex:1,
+                        transition:'color .3s'}}>{a.label}</span>
+                      {st==='RUNNING' && (
+                        <div style={{display:'flex', gap:2}}>
+                          {[0,1,2].map(i=>(
+                            <div key={i} className="dot-bounce" style={{width:4,height:4,borderRadius:'50%',
+                              background:'#7c3aed', animationDelay:`${i*.13}s`}}/>
+                          ))}
+                        </div>
+                      )}
+                      {st==='DONE' && <span style={{fontSize:11, color:'#10b981'}}>✓</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* mode note */}
+            {backendStatus === 'offline' && (
+              <div style={{background:'#1a1400', border:'1px solid #2a2000', borderRadius:10, padding:'10px 14px'}}>
+                <div style={{fontSize:11, color:'#a57f20', lineHeight:1.6}}>
+                  <strong style={{color:'#f59e0b'}}>Demo mode</strong> — backend not detected at localhost:5000.
+                  Start the Python backend to run real agents.
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* launch */}
+          <div style={{padding:'16px 24px', borderTop:'1px solid #141414'}}>
+            <button onClick={phase==='idle'||phase==='done' ? launch : undefined}
+              disabled={phase==='running'}
+              className="launch-btn"
+              style={{width:'100%', padding:'13px', borderRadius:12, fontWeight:600,
+                fontSize:14, color:'#fff', border:'none', cursor:'pointer'}}>
+              {phase==='running' ? (
+                <span style={{display:'flex', alignItems:'center', justifyContent:'center', gap:8}}>
+                  <svg className="spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/>
+                  </svg>
+                  Swarm running…
+                </span>
+              ) : phase==='done' ? 'Launch new swarm' : 'Launch Swarm'}
+            </button>
+          </div>
+        </div>
+
+        {/* ══ RIGHT PANEL ══ */}
+        <div style={{flex:1, minWidth:300, display:'flex', flexDirection:'column', overflow:'hidden'}}>
+          <div style={{flex:1, overflowY:'auto', padding:'28px 24px'}}>
+
+            {/* header */}
+            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20}}>
+              <h2 style={{fontWeight:600, fontSize:15, color:'#bbb'}}>Agent Activity</h2>
+              <div style={{display:'flex', alignItems:'center', gap:10}}>
+                {mode && (
+                  <span style={{
+                    fontSize:10, fontWeight:700, letterSpacing:'.1em', padding:'2px 8px',
+                    borderRadius:99, border:'1px solid',
+                    color: mode==='live'?'#10b981':'#f59e0b',
+                    borderColor: mode==='live'?'#10b98133':'#f59e0b33',
+                    background: mode==='live'?'#0d1f1733':'#1a140033',
+                  }}>{mode==='live'?'LIVE':'DEMO'}</span>
+                )}
+                {phase!=='idle' && (
+                  <span style={{fontSize:11, color:'#444', fontFamily:'monospace'}}>
+                    {phase==='running' ? 'Executing pipeline…' : `Completed in ${(totalMs/1000).toFixed(1)}s`}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* idle empty state */}
+            {phase==='idle' && (
+              <div className="anim-fade" style={{display:'flex', flexDirection:'column', alignItems:'center',
+                justifyContent:'center', padding:'80px 0', textAlign:'center'}}>
+                <div style={{width:48, height:48, borderRadius:16, background:'#111',
+                  border:'1px solid #1a1a1a', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16}}>
+                  <SwarmIcon/>
+                </div>
+                <p style={{fontSize:13, color:'#444', maxWidth:260, lineHeight:1.7}}>
+                  {backendStatus==='online'
+                    ? 'Backend connected. Enter your topic and launch the swarm.'
+                    : 'Configure your topic, then launch to see the demo.'}
+                </p>
+              </div>
+            )}
+
+            {/* agent cards */}
+            {phase!=='idle' && (
+              <div style={{display:'flex', flexDirection:'column', gap:20}}>
+                {AGENT_DEFS.map((agent,i) => {
+                  if (!visibleAgents.includes(agent.id)) return null;
+                  const prevId   = i>0 ? AGENT_DEFS[i-1].id : null;
+                  const prevDone = prevId ? agentStates[prevId]?.status==='DONE' : false;
+                  return (
+                    <AgentCard key={agent.id} agent={agent}
+                      state={agentStates[agent.id]}
+                      isFirst={i===0} prevDone={prevDone}/>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* output panel */}
+          {phase==='done' && finalPost && (
+            <div style={{padding:'20px 24px', borderTop:'1px solid #141414'}}>
+              <OutputPanel post={finalPost} totalMs={totalMs} onRegenerate={handleRegenerate}/>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

@@ -33,7 +33,9 @@ echo "   Writer Agent     → http://localhost:5007"
 echo "   Research Agent   → http://localhost:5001"
 echo ""
 echo "🌐 Starting Orchestrator on http://localhost:5000"
-echo "   Open PostSwarm.html in your browser"
+echo ""
+
+echo "✅ Open your browser at: http://localhost:8080"
 echo ""
 
 python agents/orchestrator.py
