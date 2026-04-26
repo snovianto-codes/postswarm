@@ -1,7 +1,7 @@
 """Hook Agent — port 5006
 Called by Orchestrator. Generates 5 punchy LinkedIn openers.
 """
-import os, json
+import os, json, traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
@@ -11,9 +11,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 _client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
-MODEL = 'gemini-2.5-flash'
+DEFAULT_MODEL = 'gemini-2.5-flash'
 
 
 @app.route('/health')
@@ -25,15 +25,17 @@ def health():
 def run():
     data = request.json or {}
     topic = data.get('topic', '')
-    take = data.get('take', '')
+    take  = data.get('take', '')
+    model = data.get('model', DEFAULT_MODEL)
+    role  = data.get('role', 'People Manager')
     print(f"[Hook Agent] ← Received | Writing hooks for: {topic[:50]}...")
 
-    prompt = f"""You are writing LinkedIn hooks for a senior leader in Singapore.
+    prompt = f"""You are writing LinkedIn hooks for a {role} based in Singapore.
 
 Topic: {topic}
 Their take: {take if take else "Be direct and practical"}
 
-Generate exactly 5 punchy LinkedIn opening lines (hooks).
+Generate exactly 5 punchy LinkedIn opening lines (hooks) that resonate specifically with a {role} audience.
 
 Rules:
 - Each hook must be under 15 words
@@ -49,7 +51,7 @@ Return as a JSON array of 5 strings:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _client.models.generate_content(model=MODEL, contents=prompt)
+        response = _client.models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]
@@ -61,7 +63,8 @@ Return ONLY the JSON array, no other text."""
         print(f"[Hook Agent] ✓ Generated {len(hooks)} hooks")
         return jsonify(hooks=hooks)
     except Exception as e:
-        print(f"[Hook Agent] [ERROR] {e}")
+        print(f"[Hook Agent] [ERROR] {type(e).__name__}: {e}")
+        print(traceback.format_exc())
         return jsonify(hooks=[
             "300 AI sub-agents. Most teams can't handle 3.",
             "Impressive demo. Disaster at 3am on a Tuesday.",

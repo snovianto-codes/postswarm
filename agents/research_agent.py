@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
 WEB_URL     = 'http://localhost:5002/run'
 FACT_URL    = 'http://localhost:5003/run'
@@ -19,23 +19,17 @@ DEVIL_URL   = 'http://localhost:5004/run'
 TIMEOUT     = 30
 
 
-def call_web(topic):
-    print(f"[Research Agent] → Calling Web Agent at {WEB_URL}")
-    r = http.post(WEB_URL, json={'topic': topic}, timeout=TIMEOUT)
-    r.raise_for_status()
-    return r.json().get('data_points', [])
-
-
-def call_fact_checker(topic, data_points):
+def call_fact_checker(topic, data_points, model):
     print(f"[Research Agent] → Calling Fact Checker at {FACT_URL}")
-    r = http.post(FACT_URL, json={'topic': topic, 'data_points': data_points}, timeout=TIMEOUT)
+    r = http.post(FACT_URL, json={'topic': topic, 'data_points': data_points, 'model': model},
+                  timeout=TIMEOUT)
     r.raise_for_status()
     return r.json().get('verified', data_points)
 
 
-def call_devil(topic):
+def call_devil(topic, model):
     print(f"[Research Agent] → Calling Devil's Advocate at {DEVIL_URL}")
-    r = http.post(DEVIL_URL, json={'topic': topic}, timeout=TIMEOUT)
+    r = http.post(DEVIL_URL, json={'topic': topic, 'model': model}, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json().get('counter_points', [])
 
@@ -51,13 +45,15 @@ def run():
     topic = data.get('topic', '')
     take  = data.get('take', '')
     tone  = data.get('tone', '')
+    model = data.get('model', 'gemini-2.5-flash')
+    role  = data.get('role', 'People Manager')
     print(f"[Research Agent] ← Received | Orchestrating research for: {topic[:60]}...")
 
     # Step 1: call Web Agent first to get raw data
     data_points = []
     source_url  = None
     try:
-        web_resp    = http.post(WEB_URL, json={'topic': topic}, timeout=TIMEOUT)
+        web_resp    = http.post(WEB_URL, json={'topic': topic, 'model': model}, timeout=TIMEOUT)
         web_resp.raise_for_status()
         web_json    = web_resp.json()
         data_points = web_json.get('data_points', [])
@@ -74,8 +70,8 @@ def run():
     with ThreadPoolExecutor(max_workers=2) as ex:
         futures = {}
         if data_points:
-            futures['fact'] = ex.submit(call_fact_checker, topic, data_points)
-        futures['devil'] = ex.submit(call_devil, topic)
+            futures['fact'] = ex.submit(call_fact_checker, topic, data_points, model)
+        futures['devil'] = ex.submit(call_devil, topic, model)
 
         for key, fut in futures.items():
             try:

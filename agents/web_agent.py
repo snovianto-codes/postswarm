@@ -2,8 +2,9 @@
 Called by Research Agent. If topic contains a URL, fetches and reads it first.
 Otherwise generates grounded research points from Gemini.
 """
-import os, re, json
+import os, re, json, traceback, ipaddress
 from html.parser import HTMLParser
+from urllib.parse import urlparse
 import urllib.request
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -14,9 +15,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 _client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
-MODEL   = 'gemini-2.5-flash'
+DEFAULT_MODEL = 'gemini-2.5-flash'
 URL_RE  = re.compile(r'https?://\S+', re.I)
 MAX_CHARS = 8000
 
@@ -61,16 +62,37 @@ class _Stripper(HTMLParser):
         return '\n'.join(self.chunks)
 
 
+def _validate_url(url: str) -> None:
+    """Raise ValueError for URLs that could enable SSRF attacks."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ('https', 'http'):
+        raise ValueError(f"Scheme '{parsed.scheme}' not allowed — only http/https")
+    hostname = parsed.hostname or ''
+    # Block IP-based access to private/loopback ranges
+    try:
+        addr = ipaddress.ip_address(hostname)
+        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+            raise ValueError(f"Private/reserved IP not allowed: {hostname}")
+    except ValueError as e:
+        if 'not allowed' in str(e):
+            raise
+        # hostname is a domain name, not an IP — that's fine
+    # Block localhost by name
+    if hostname.lower() in ('localhost', 'metadata.google.internal'):
+        raise ValueError(f"Blocked hostname: {hostname}")
+
+
 def fetch_url(url: str) -> str:
     """Fetch a URL and return stripped plain text (capped at MAX_CHARS)."""
+    _validate_url(url)
     req = urllib.request.Request(url, headers={
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
     })
     with urllib.request.urlopen(req, timeout=15) as resp:
-        html = resp.read().decode('utf-8', errors='replace')
+        # Guard against huge responses
+        html = resp.read(MAX_CHARS * 10).decode('utf-8', errors='replace')
     stripper = _Stripper()
     stripper.feed(html)
-    # Keep only chunks long enough to be real sentences
     text = stripper.text()
     return text[:MAX_CHARS]
 
@@ -86,6 +108,7 @@ def health():
 def run():
     data  = request.json or {}
     topic = data.get('topic', '')
+    model = data.get('model', DEFAULT_MODEL)
 
     urls   = URL_RE.findall(topic)
     article_text = ''
@@ -138,7 +161,7 @@ Return as a JSON array of strings. Example:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _client.models.generate_content(model=MODEL, contents=prompt)
+        response = _client.models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]
@@ -149,7 +172,8 @@ Return ONLY the JSON array, no other text."""
         print(f"[Web Agent] ✓ Generated {len(data_points)} research points ({source})")
         return jsonify(data_points=data_points, source_url=urls[0] if urls else None)
     except Exception as e:
-        print(f"[Web Agent] [ERROR] {e}")
+        print(f"[Web Agent] [ERROR] {type(e).__name__}: {e}")
+        print(traceback.format_exc())
         if article_text:
             # fallback: return raw sentences from article as points
             sentences = [s.strip() for s in article_text.split('.') if len(s.strip()) > 40][:5]

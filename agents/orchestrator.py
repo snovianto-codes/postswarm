@@ -1,11 +1,11 @@
-"""Orchestrator — port 5000
+"""Orchestrator — port 8080
 Serves PostSwarm.html at / and runs the agent pipeline via SSE at /run.
 No CORS needed — frontend and backend share the same origin.
 """
 import os, json, time, re, queue, threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, Response, stream_with_context, send_file
+from flask import Flask, request, Response, stream_with_context, send_file, abort
 import requests as http
 from dotenv import load_dotenv
 
@@ -21,6 +21,13 @@ PERSPECTIVE_URL = 'http://localhost:5005/run'
 HOOK_URL        = 'http://localhost:5006/run'
 WRITER_URL      = 'http://localhost:5007/run'
 TIMEOUT         = 60
+
+ALLOWED_MODELS = {
+    'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash',
+}
+MAX_TOPIC_LEN = 2000
+MAX_TAKE_LEN  = 500
+MAX_ROLE_LEN  = 100
 
 AGENT_PORTS = {
     'web':         5002,
@@ -73,15 +80,24 @@ def health():
 
 @app.route('/run')
 def run():
-    topic = request.args.get('topic', '')
-    take  = request.args.get('take', '')
-    tone  = request.args.get('tone', 'Skeptical')
+    topic = request.args.get('topic', '')[:MAX_TOPIC_LEN]
+    take  = request.args.get('take',  '')[:MAX_TAKE_LEN]
+    tone  = request.args.get('tone',  'Skeptical')[:50]
+    model = request.args.get('model', 'gemini-2.5-flash')
+    role  = request.args.get('role',  'People Manager')[:MAX_ROLE_LEN]
 
-    banner(f"NEW REQUEST\n  topic : {topic[:55]}\n  take  : {take[:45]}\n  tone  : {tone}")
+    if model not in ALLOWED_MODELS:
+        abort(400, f"Unknown model. Allowed: {', '.join(sorted(ALLOWED_MODELS))}")
+
+    ALLOWED_TONES = {'Skeptical', 'Curious', 'Excited', 'Provocative', 'Balanced'}
+    if tone not in ALLOWED_TONES:
+        tone = 'Skeptical'  # silently default rather than hard error
+
+    banner(f"NEW REQUEST\n  topic : {topic[:55]}\n  take  : {take[:45]}\n  tone  : {tone}\n  model : {model}\n  role  : {role}")
 
     def generate():
         try:
-            yield from make_pipeline(topic, take, tone)
+            yield from make_pipeline(topic, take, tone, model, role)
         except Exception as e:
             print(f"[{ts()}] [Orchestrator] [ERROR] Pipeline crashed: {e}")
             yield sse({'type': 'error', 'message': str(e)})
@@ -95,7 +111,7 @@ def run():
 
 # ── Pipeline ──────────────────────────────────────────────────────────
 
-def make_pipeline(topic, take, tone):
+def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager'):
 
     # ── 1. Research ─────────────────────────────────────────────────
     print(f"[{ts()}] [Orchestrator] ▶  STAGE 1 — Research Agent")
@@ -132,7 +148,8 @@ def make_pipeline(topic, take, tone):
         try:
             print(f"[{ts()}] [Orchestrator]    → POST {RESEARCH_URL}")
             r = http.post(RESEARCH_URL,
-                          json={'topic': topic, 'take': take, 'tone': tone},
+                          json={'topic': topic, 'take': take, 'tone': tone,
+                                'model': model, 'role': role},
                           timeout=TIMEOUT)
             r.raise_for_status()
             research.update(r.json())
@@ -181,6 +198,18 @@ def make_pipeline(topic, take, tone):
         yield sse({'type': 'agent_status', 'agent': 'fact',  'status': 'DONE', 'elapsed': fact_ms})
         yield sse({'type': 'agent_status', 'agent': 'devil', 'status': 'DONE', 'elapsed': devil_ms})
         yield sse({'type': 'agent_status', 'agent': 'research', 'status': 'DONE', 'elapsed': elapsed})
+        # Emit detail payloads so the UI can show what each sub-agent found
+        print(f"[{ts()}] [Orchestrator]    ▶ Emitting agent_detail events (web/fact/devil)…")
+        yield sse({'type': 'agent_detail', 'agent': 'web', 'data': {
+            'research_points': research.get('data_points', []),
+            'source_url': research.get('source_url'),
+        }})
+        yield sse({'type': 'agent_detail', 'agent': 'fact', 'data': {
+            'verified': research.get('verified', []),
+        }})
+        yield sse({'type': 'agent_detail', 'agent': 'devil', 'data': {
+            'counter_points': research.get('counter_points', []),
+        }})
         print(f"[{ts()}] [Orchestrator]    ✓ Research DONE ({elapsed}ms) — "
               f"{len(research.get('verified',[]))} facts, "
               f"{len(research.get('counter_points',[]))} counters")
@@ -199,7 +228,8 @@ def make_pipeline(topic, take, tone):
 
     def fetch_hooks():
         print(f"[{ts()}] [Orchestrator]    → POST {HOOK_URL}")
-        r = http.post(HOOK_URL, json={'topic': topic, 'take': take}, timeout=TIMEOUT)
+        r = http.post(HOOK_URL, json={'topic': topic, 'take': take, 'model': model, 'role': role},
+                      timeout=TIMEOUT)
         r.raise_for_status()
         result = r.json().get('hooks', [])
         print(f"[{ts()}] [Orchestrator]    ✓ Hook Agent — {len(result)} hooks returned")
@@ -207,7 +237,9 @@ def make_pipeline(topic, take, tone):
 
     def fetch_perspective():
         print(f"[{ts()}] [Orchestrator]    → POST {PERSPECTIVE_URL}")
-        r = http.post(PERSPECTIVE_URL, json={'topic': topic, 'research': research}, timeout=TIMEOUT)
+        r = http.post(PERSPECTIVE_URL,
+                      json={'topic': topic, 'research': research, 'model': model, 'role': role},
+                      timeout=TIMEOUT)
         r.raise_for_status()
         result = r.json().get('insights', [])
         print(f"[{ts()}] [Orchestrator]    ✓ Perspective Agent — {len(result)} insights returned")
@@ -223,9 +255,12 @@ def make_pipeline(topic, take, tone):
                 elapsed = int((time.time() - t1) * 1000)
                 if label == 'hook':
                     hooks = result
+                    yield sse({'type': 'agent_status', 'agent': label, 'status': 'DONE', 'elapsed': elapsed})
+                    yield sse({'type': 'agent_detail', 'agent': 'hook', 'data': {'hooks': hooks}})
                 else:
                     insights = result
-                yield sse({'type': 'agent_status', 'agent': label, 'status': 'DONE', 'elapsed': elapsed})
+                    yield sse({'type': 'agent_status', 'agent': label, 'status': 'DONE', 'elapsed': elapsed})
+                    yield sse({'type': 'agent_detail', 'agent': 'perspective', 'data': {'insights': insights}})
             except Exception as e:
                 print(f"[{ts()}] [Orchestrator]    ✗ {label} FAILED: {e}")
                 yield sse({'type': 'agent_status', 'agent': label, 'status': 'FAILED'})
@@ -242,14 +277,21 @@ def make_pipeline(topic, take, tone):
         print(f"[{ts()}] [Orchestrator]    → POST {WRITER_URL}")
         r = http.post(WRITER_URL,
                       json={'topic': topic, 'take': take, 'tone': tone,
-                            'research': research, 'hooks': hooks, 'insights': insights},
+                            'research': research, 'hooks': hooks, 'insights': insights,
+                            'model': model, 'role': role},
                       timeout=TIMEOUT)
         r.raise_for_status()
-        final_post = r.json().get('post', '')
+        writer_resp = r.json()
+        final_post  = writer_resp.get('post', '')
+        model_used  = writer_resp.get('model_used', model)
         elapsed = int((time.time() - t2) * 1000)
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'RUNNING', 'log': 'Applying voice and tone…'})
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'DONE', 'elapsed': elapsed})
-        print(f"[{ts()}] [Orchestrator]    ✓ Writer DONE ({elapsed}ms) — {len(final_post.split())} words")
+        yield sse({'type': 'agent_detail', 'agent': 'writer', 'data': {
+            'word_count': len(final_post.split()),
+            'model_used': model_used,
+        }})
+        print(f"[{ts()}] [Orchestrator]    ✓ Writer DONE ({elapsed}ms) — {len(final_post.split())} words via {model_used}")
     except Exception as e:
         print(f"[{ts()}] [Orchestrator]    ✗ Writer FAILED: {e}")
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'FAILED'})

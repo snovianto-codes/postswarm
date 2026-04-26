@@ -1,7 +1,7 @@
 """Writer Agent — port 5007
 Called by Orchestrator. Assembles the final LinkedIn post using VOICE.md.
 """
-import os, json
+import os, json, traceback
 from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -12,10 +12,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 _client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
 VOICE_PATH = Path(__file__).parent.parent / 'VOICE.md'
-PRIMARY_MODEL   = 'gemini-2.5-pro'
 FALLBACK_MODEL  = 'gemini-2.5-flash'
 
 
@@ -40,6 +39,9 @@ def run():
     research = data.get('research', {})
     hooks    = data.get('hooks', [])
     insights = data.get('insights', [])
+    model    = data.get('model', FALLBACK_MODEL)
+    role     = data.get('role', 'People Manager')
+    primary_model = model
     print(f"[Writer Agent] ← Received | Writing post for: {topic[:50]}...")
 
     voice = load_voice()
@@ -60,9 +62,15 @@ def run():
 ---END VOICE---
 
 ## Assignment
-Topic: {topic}
-Author's take: {take if take else "Be direct and honest"}
-Tone: {tone}{source_note}
+---USER INPUT START---
+Topic: {topic[:2000]}
+Author's role / perspective: {role[:100]}
+Author's take: {(take or "Be direct and honest")[:500]}
+Tone: {tone[:50]}
+---USER INPUT END---
+{source_note}
+
+Write the post FROM the perspective of a {role[:100]} — use language, concerns, and angles that are natural for someone in that role.
 
 ## Research to use
 Verified facts:
@@ -97,15 +105,20 @@ SEA/team insights (weave in naturally):
 
 Return ONLY the post text. No preamble, no explanation."""
 
-    for model_name in (PRIMARY_MODEL, FALLBACK_MODEL):
+    fallback_models = [m for m in [primary_model, FALLBACK_MODEL] if m]
+    seen = set()
+    model_sequence = [m for m in fallback_models if not (m in seen or seen.add(m))]
+
+    for model_name in model_sequence:
         try:
             response = _client.models.generate_content(model=model_name, contents=prompt)
             post = response.text.strip()
             print(f"[Writer Agent] ✓ Post written ({len(post.split())} words) using {model_name}")
-            return jsonify(post=post)
+            return jsonify(post=post, model_used=model_name)
         except Exception as e:
-            print(f"[Writer Agent] [ERROR] {model_name} failed: {e}")
-            if model_name == FALLBACK_MODEL:
+            print(f"[Writer Agent] [ERROR] {model_name} failed: {type(e).__name__}: {e}")
+            print(traceback.format_exc())
+            if model_name == model_sequence[-1]:
                 hook_line  = hooks[0] if hooks else "The benchmark looks great. Your team isn't ready."
                 fact_line  = verified[0] if verified else "AI adoption gaps remain the biggest barrier to real ROI."
                 counter    = counters[0] if counters else "But buying the tool is the easy part. Changing how people work is not."
@@ -123,7 +136,7 @@ In Singapore and across SEA, I see this pattern repeat: pilot succeeds, scale fa
 What's the one thing your team needs before deploying this responsibly?
 
 #AI #Leadership #SEA #FutureOfWork"""
-                return jsonify(post=fallback_post)
+                return jsonify(post=fallback_post, model_used='fallback')
 
 
 if __name__ == '__main__':

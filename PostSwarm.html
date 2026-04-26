@@ -119,6 +119,24 @@ const { useState, useEffect, useRef, useCallback } = React;
 
 const BACKEND = '';
 
+const MODELS = [
+  { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        desc: 'Highest quality · best reasoning · slower' },
+  { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      desc: 'Balanced · fast · recommended' },
+  { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      desc: 'Faster · lower cost' },
+  { id: 'gemini-1.5-flash',      label: 'Gemini 1.5 Flash',      desc: 'Basic · fastest · cheapest' },
+];
+
+const ROLE_PRESETS = [
+  'People Manager',
+  'Software Engineer',
+  'Product Manager',
+  'CTO / Tech Lead',
+  'Founder / CEO',
+  'Data Scientist',
+  'Consultant',
+  'Marketing Lead',
+];
+
 const AGENT_DEFS = [
   { id:'research',    label:'Research Agent',         emoji:'🔍', calledBy:'Orchestrator'    },
   { id:'web',         label:'Web Agent',              emoji:'🌐', calledBy:'Research Agent'  },
@@ -172,7 +190,7 @@ What's your team actually doing to prepare for agentic AI?
 /* ─────────────────────────── helpers ───────────────────────────── */
 
 const initStates = () => Object.fromEntries(
-  AGENT_DEFS.map(a => [a.id, { status:'IDLE', logs:[], elapsed:0, startTime:0 }])
+  AGENT_DEFS.map(a => [a.id, { status:'IDLE', logs:[], elapsed:0, startTime:0, detail:null }])
 );
 
 /* ─────────────────────────── sub-components ────────────────────── */
@@ -209,8 +227,9 @@ function StatusBadge({ status }) {
 
 function AgentCard({ agent, state, isFirst, prevDone }) {
   const { label, emoji, calledBy } = agent;
-  const { status, logs, elapsed, startTime } = state;
+  const { status, logs, elapsed, startTime, detail } = state;
   const [liveMs, setLiveMs] = useState(0);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   useEffect(() => {
     if (status !== 'RUNNING') return;
@@ -277,6 +296,21 @@ function AgentCard({ agent, state, isFirst, prevDone }) {
             )}
           </div>
         )}
+
+        {status==='DONE' && detail && agent.id !== 'research' && (
+          <div style={{marginTop:10}}>
+            <button
+              onClick={() => setDetailOpen(o => !o)}
+              style={{display:'inline-flex', alignItems:'center', gap:5, fontSize:11,
+                color: detailOpen ? '#a78bfa' : '#555', background:'none', border:'none',
+                cursor:'pointer', padding:0, transition:'color .15s'}}
+            >
+              <ChevronIcon open={detailOpen}/>
+              {detailOpen ? 'Hide details' : 'View details'}
+            </button>
+            {detailOpen && <DetailPanel agentId={agent.id} detail={detail}/>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -319,6 +353,106 @@ function OutputPanel({ post, totalMs, onRegenerate }) {
 function CopyIcon()    { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="4.5" y="4.5" width="7" height="7" rx="1.2"/><path d="M1.5 8.5V2C1.5 1.7 1.7 1.5 2 1.5h6.5" strokeLinecap="round"/></svg>; }
 function RefreshIcon() { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M11 6.5A4.5 4.5 0 1 1 6.5 2" strokeLinecap="round"/><path d="M11 2v4.5h-4.5" strokeLinecap="round" strokeLinejoin="round"/></svg>; }
 function CheckIcon()   { return <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="#10b981" strokeWidth="1.8"><path d="M2 7l3.5 3.5L11 3.5" strokeLinecap="round" strokeLinejoin="round"/></svg>; }
+function ChevronIcon({ open }) {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5"
+      style={{transition:'transform .2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)'}}>
+      <path d="M2 3.5l3 3 3-3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function DetailPanel({ agentId, detail }) {
+  if (!detail) return null;
+  const row = (label, text, color='#666') => (
+    <div style={{display:'flex', gap:8, alignItems:'flex-start', padding:'4px 0',
+      borderBottom:'1px solid #1a1a1a'}}>
+      <span style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+        textTransform:'uppercase', flexShrink:0, minWidth:52, paddingTop:1}}>{label}</span>
+      <span style={{fontSize:11, color, lineHeight:1.6}}>{text}</span>
+    </div>
+  );
+  const list = (items, bulletColor='#555') => items?.length > 0 ? (
+    <div style={{display:'flex', flexDirection:'column', gap:3, paddingTop:2}}>
+      {items.map((item, i) => (
+        <div key={i} style={{display:'flex', gap:6, alignItems:'flex-start'}}>
+          <span style={{color: bulletColor, fontSize:10, flexShrink:0, paddingTop:2}}>›</span>
+          <span style={{fontSize:11, color:'#888', lineHeight:1.6}}>{item}</span>
+        </div>
+      ))}
+    </div>
+  ) : <span style={{fontSize:11, color:'#444', fontStyle:'italic'}}>None</span>;
+
+  const panels = {
+    web: () => (
+      <div style={{display:'flex', flexDirection:'column', gap:0}}>
+        {detail.source_url && row('Source', detail.source_url, '#7c9cc0')}
+        <div style={{padding:'6px 0'}}>
+          <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+            textTransform:'uppercase', marginBottom:4}}>Research Points</div>
+          {list(detail.research_points, '#7c3aed')}
+        </div>
+      </div>
+    ),
+    fact: () => (
+      <div style={{padding:'6px 0'}}>
+        <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+          textTransform:'uppercase', marginBottom:4}}>Verified Facts</div>
+        {list(detail.verified, '#10b981')}
+      </div>
+    ),
+    devil: () => (
+      <div style={{padding:'6px 0'}}>
+        <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+          textTransform:'uppercase', marginBottom:4}}>Counter-Arguments</div>
+        {list(detail.counter_points, '#f87171')}
+      </div>
+    ),
+    hook: () => (
+      <div style={{padding:'6px 0'}}>
+        <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+          textTransform:'uppercase', marginBottom:4}}>Hook Options</div>
+        {detail.hooks?.map((h, i) => (
+          <div key={i} style={{display:'flex', gap:8, alignItems:'flex-start', padding:'3px 0',
+            borderBottom: i < detail.hooks.length-1 ? '1px solid #181818' : 'none'}}>
+            <span style={{fontSize:10, color:'#555', flexShrink:0, paddingTop:2, fontFamily:'monospace'}}>{i+1}.</span>
+            <span style={{fontSize:11, color: i===0 ? '#c4b5fd' : '#777', lineHeight:1.6,
+              fontStyle: i===0 ? 'normal' : 'normal'}}>
+              {i===0 && <span style={{fontSize:9, background:'#3d1f7a', color:'#c4b5fd',
+                padding:'1px 5px', borderRadius:4, marginRight:5, fontWeight:600}}>USED</span>}
+              {h}
+            </span>
+          </div>
+        ))}
+      </div>
+    ),
+    perspective: () => (
+      <div style={{padding:'6px 0'}}>
+        <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+          textTransform:'uppercase', marginBottom:4}}>SEA Insights</div>
+        {list(detail.insights, '#f59e0b')}
+      </div>
+    ),
+    writer: () => (
+      <div style={{display:'flex', gap:16, padding:'6px 0'}}>
+        {row('Words', String(detail.word_count), '#10b981')}
+        {row('Model', detail.model_used, '#c4b5fd')}
+      </div>
+    ),
+    research: () => null,
+  };
+
+  const render = panels[agentId];
+  if (!render) return null;
+  const content = render();
+  if (!content) return null;
+
+  return (
+    <div style={{marginTop:8, paddingTop:8, borderTop:'1px solid #1e1e1e'}}>
+      {content}
+    </div>
+  );
+}
 
 /* ─────────────────────────── main app ──────────────────────────── */
 
@@ -326,6 +460,8 @@ function App() {
   const [topic, setTopic]  = useState('');
   const [take,  setTake]   = useState('');
   const [tone,  setTone]   = useState('Skeptical');
+  const [model, setModel]  = useState('gemini-2.5-flash');
+  const [role,  setRole]   = useState('People Manager');
 
   const [phase,        setPhase]        = useState('idle');   // idle | running | done
   const [agentStates,  setAgentStates]  = useState(initStates);
@@ -391,7 +527,7 @@ function App() {
     const params = new URLSearchParams({
       topic: topic || 'Kimi K2.6 launched with 300 AI sub-agents',
       take:  take  || "most teams aren't ready",
-      tone,
+      tone, model, role,
     });
     const evs = new EventSource(`${BACKEND}/run?${params.toString()}`);
     evsRef.current = evs;
@@ -416,6 +552,10 @@ function App() {
           updateAgent(agent, { status:'FAILED' });
         }
         if (log) appendLog(agent, log);
+      }
+
+      if (msg.type === 'agent_detail') {
+        setAgentStates(s => ({ ...s, [msg.agent]: { ...s[msg.agent], detail: msg.data } }));
       }
 
       if (msg.type === 'done') {
@@ -594,23 +734,70 @@ function App() {
               />
             </div>
 
-            {/* tone */}
-            <div style={{display:'flex', flexDirection:'column', gap:8}}>
-              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Tone</label>
-              <div style={{position:'relative'}}>
-                <select value={tone} onChange={e=>setTone(e.target.value)}
-                  style={{width:'100%', appearance:'none', background:'#111', border:'1px solid #1f1f1f',
-                    borderRadius:12, padding:'12px 14px', fontSize:13, color:'#ddd',
-                    fontFamily:'Inter,sans-serif', cursor:'pointer'}}>
-                  {['Skeptical','Curious','Excited','Provocative','Balanced'].map(t=>(
-                    <option key={t}>{t}</option>
-                  ))}
-                </select>
-                <div style={{position:'absolute', right:14, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#555'}}>
-                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M2 4l3.5 3.5L9 4" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+            {/* tone + role (two columns) */}
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12}}>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Tone</label>
+                <div style={{position:'relative'}}>
+                  <select value={tone} onChange={e=>setTone(e.target.value)}
+                    style={{width:'100%', appearance:'none', background:'#111', border:'1px solid #1f1f1f',
+                      borderRadius:12, padding:'11px 14px', fontSize:13, color:'#ddd',
+                      fontFamily:'Inter,sans-serif', cursor:'pointer'}}>
+                    {['Skeptical','Curious','Excited','Provocative','Balanced'].map(t=>(
+                      <option key={t}>{t}</option>
+                    ))}
+                  </select>
+                  <div style={{position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', pointerEvents:'none', color:'#555'}}>
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M2 4l3.5 3.5L9 4" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
                 </div>
+              </div>
+
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Role</label>
+                <div style={{position:'relative'}}>
+                  <input
+                    list="role-list"
+                    value={role}
+                    onChange={e=>setRole(e.target.value)}
+                    placeholder="People Manager"
+                    style={{width:'100%', background:'#111', border:'1px solid #1f1f1f',
+                      borderRadius:12, padding:'11px 14px', fontSize:13, color:'#ddd',
+                      fontFamily:'Inter,sans-serif', outline:'none', transition:'border-color .2s'}}
+                    onFocus={e=>e.target.style.borderColor='#3d1f7a'}
+                    onBlur={e=>e.target.style.borderColor='#1f1f1f'}
+                  />
+                  <datalist id="role-list">
+                    {ROLE_PRESETS.map(r => <option key={r} value={r}/>)}
+                  </datalist>
+                </div>
+              </div>
+            </div>
+
+            {/* model selector */}
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              <label style={{fontSize:11, fontWeight:600, color:'#555', letterSpacing:'.08em', textTransform:'uppercase'}}>Model</label>
+              <div style={{display:'flex', flexDirection:'column', gap:6}}>
+                {MODELS.map(m => (
+                  <button key={m.id} onClick={()=>setModel(m.id)}
+                    style={{display:'flex', alignItems:'center', justifyContent:'space-between',
+                      padding:'10px 14px', borderRadius:10, border:'1px solid',
+                      borderColor: model===m.id ? '#4c1d95' : '#1a1a1a',
+                      background: model===m.id ? '#1a1030' : '#0d0d0d',
+                      cursor:'pointer', transition:'all .15s', textAlign:'left'}}>
+                    <div style={{display:'flex', flexDirection:'column', gap:2}}>
+                      <span style={{fontSize:12, fontWeight:600,
+                        color: model===m.id ? '#c4b5fd' : '#777'}}>{m.label}</span>
+                      <span style={{fontSize:10, color: model===m.id ? '#7c5ac4' : '#444'}}>{m.desc}</span>
+                    </div>
+                    {model===m.id && (
+                      <div style={{width:6, height:6, borderRadius:'50%', background:'#7c3aed',
+                        boxShadow:'0 0 6px rgba(124,58,237,.8)', flexShrink:0}}/>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
 

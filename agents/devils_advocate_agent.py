@@ -1,7 +1,7 @@
 """Devil's Advocate Agent — port 5004
 Called by Research Agent. Generates sharp counter-arguments.
 """
-import os, json
+import os, json, traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google import genai
@@ -11,9 +11,9 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 _client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
-MODEL = 'gemini-2.5-flash'
+DEFAULT_MODEL = 'gemini-2.5-flash'
 
 
 @app.route('/health')
@@ -25,6 +25,7 @@ def health():
 def run():
     data = request.json or {}
     topic = data.get('topic', '')
+    model = data.get('model', DEFAULT_MODEL)
     print(f"[Devil's Advocate] ← Received | Arguing against: {topic[:60]}...")
 
     prompt = f"""You are a sharp devil's advocate for a LinkedIn post about: {topic}
@@ -44,7 +45,7 @@ Return as a JSON array of strings:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _client.models.generate_content(model=MODEL, contents=prompt)
+        response = _client.models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]
@@ -54,7 +55,8 @@ Return ONLY the JSON array, no other text."""
         print(f"[Devil's Advocate] ✓ Generated {len(counter_points)} counter-arguments")
         return jsonify(counter_points=counter_points)
     except Exception as e:
-        print(f"[Devil's Advocate] [ERROR] {e}")
+        print(f"[Devil's Advocate] [ERROR] {type(e).__name__}: {e}")
+        print(traceback.format_exc())
         return jsonify(counter_points=[
             "Most teams lack the observability tools to debug multi-agent failures before they hit production.",
             "Benchmarks measure capability, not reliability — enterprise teams need the latter far more.",
