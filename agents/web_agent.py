@@ -24,40 +24,53 @@ MAX_CHARS = 8000
 # ── HTML → plain text ────────────────────────────────────────────────
 
 class _Stripper(HTMLParser):
-    SKIP = {'script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript'}
+    # Tags whose full subtree we discard
+    SKIP = {'script', 'style', 'nav', 'footer', 'header', 'aside',
+            'noscript', 'figure', 'figcaption', 'button', 'form',
+            'iframe', 'svg', 'menu'}
+    # Tags that signal article body — we prefer content inside these
+    ARTICLE = {'article', 'main', 'section'}
 
     def __init__(self):
         super().__init__()
-        self._skip  = 0
-        self.chunks = []
+        self._skip    = 0
+        self._article = 0
+        self.chunks   = []
 
     def handle_starttag(self, tag, attrs):
         if tag in self.SKIP:
             self._skip += 1
+        if tag in self.ARTICLE:
+            self._article += 1
 
     def handle_endtag(self, tag):
         if tag in self.SKIP and self._skip:
             self._skip -= 1
+        if tag in self.ARTICLE and self._article:
+            self._article -= 1
 
     def handle_data(self, data):
-        if not self._skip:
-            t = data.strip()
-            if t:
-                self.chunks.append(t)
+        if self._skip:
+            return
+        t = data.strip()
+        # Skip short fragments (menus, labels, timestamps, share counts)
+        if t and len(t) > 25:
+            self.chunks.append(t)
 
     def text(self):
-        return ' '.join(self.chunks)
+        return '\n'.join(self.chunks)
 
 
 def fetch_url(url: str) -> str:
     """Fetch a URL and return stripped plain text (capped at MAX_CHARS)."""
     req = urllib.request.Request(url, headers={
-        'User-Agent': 'Mozilla/5.0 (compatible; PostSwarm/1.0)'
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
     })
     with urllib.request.urlopen(req, timeout=15) as resp:
         html = resp.read().decode('utf-8', errors='replace')
     stripper = _Stripper()
     stripper.feed(html)
+    # Keep only chunks long enough to be real sentences
     text = stripper.text()
     return text[:MAX_CHARS]
 
