@@ -48,10 +48,10 @@ SOURCES = [
     (3, 'Simon Willison', 'https://simonwillison.net/atom/everything/'),
     (3, 'Interconnects',  'https://www.interconnects.ai/feed'),
     (3, 'Latent Space',   'https://www.latent.space/feed'),
+    (3, 'VentureBeat',    'https://venturebeat.com/feed/'),
     (4, 'HN AI',          'https://hnrss.org/newest?q=AI+OR+LLM&points=80'),
-    (5, 'e27',            'https://e27.co/feed/'),
     (5, 'Tech Wire Asia', 'https://techwireasia.com/feed/'),
-    (5, 'AI Singapore',   'https://aisingapore.org/feed/'),
+    (5, 'CNA Tech',       'https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6511'),
 ]
 
 _TAG_RE = re.compile(r'<[^>]+>')
