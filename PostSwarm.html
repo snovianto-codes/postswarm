@@ -632,32 +632,46 @@ function AllStoriesPanel({ items, picks, onDraftThis }) {
             const group = visible.filter(it => it.tier === tier);
             if (!group.length) return null;
             return (
-              <div key={tier} style={{marginBottom:20}}>
-                <p style={{fontSize:10, color:'#333', textTransform:'uppercase',
-                  letterSpacing:'.06em', marginBottom:8}}>
-                  Tier {tier} · {tierLabels[tier]}
+              <div key={tier} style={{marginBottom:24}}>
+                <p style={{
+                  fontSize: tier === 1 ? 13 : 10,
+                  color:    tier === 1 ? '#aaa' : '#333',
+                  fontWeight: tier === 1 ? 600 : 400,
+                  textTransform:'uppercase',
+                  letterSpacing:'.06em',
+                  marginBottom: tier === 1 ? 10 : 8,
+                  borderBottom: tier === 1 ? '1px solid #222' : 'none',
+                  paddingBottom: tier === 1 ? 6 : 0,
+                }}>
+                  {tier === 1 ? '★ ' : ''}{tierLabels[tier]}
                 </p>
                 {group.map(item => {
                   const isPick = pickHashes.has(item.hash);
                   const ago = timeSince(item.ts * 1000);
+                  const isT1 = tier === 1;
                   return (
                     <div key={item.hash} style={{
                       display:'flex', alignItems:'flex-start', gap:10,
-                      padding:'8px 10px', borderRadius:8, marginBottom:4,
-                      background: isPick ? '#0d1f0d' : 'transparent',
-                      border: `1px solid ${isPick ? '#1a3d1a' : '#151515'}`,
+                      padding: isT1 ? '10px 12px' : '8px 10px',
+                      borderRadius:8, marginBottom: isT1 ? 6 : 4,
+                      background: isPick ? '#0d1f0d' : isT1 ? '#0f0f0f' : 'transparent',
+                      border: `1px solid ${isPick ? '#1a3d1a' : isT1 ? '#222' : '#151515'}`,
                     }}>
                       {isPick && <span style={{fontSize:9, color:'#10b981', fontWeight:700,
                         flexShrink:0, marginTop:3}}>★</span>}
                       <div style={{flex:1, minWidth:0}}>
                         <a href={item.url} target="_blank" rel="noopener noreferrer"
-                          style={{fontSize:12, color: isPick ? '#d4f5d4' : '#888',
-                            textDecoration:'none', lineHeight:1.4, display:'block'}}
+                          style={{
+                            fontSize: isT1 ? 13 : 12,
+                            fontWeight: isT1 ? 500 : 400,
+                            color: isPick ? '#d4f5d4' : isT1 ? '#ccc' : '#888',
+                            textDecoration:'none', lineHeight:1.4, display:'block',
+                          }}
                           onMouseEnter={e=>e.target.style.color='#fff'}
-                          onMouseLeave={e=>e.target.style.color=isPick?'#d4f5d4':'#888'}>
+                          onMouseLeave={e=>e.target.style.color=isPick?'#d4f5d4':isT1?'#ccc':'#888'}>
                           {item.title}
                         </a>
-                        <span style={{fontSize:10, color:'#333'}}>{item.source} · {ago}</span>
+                        <span style={{fontSize:10, color: isT1 ? '#555' : '#333'}}>{item.source} · {ago}</span>
                       </div>
                       <div style={{display:'flex', gap:6, flexShrink:0}}>
                         <button onClick={() => onDraftThis(item, 'repost')}
