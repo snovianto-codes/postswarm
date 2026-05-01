@@ -101,14 +101,18 @@ def _recent_posted_titles():
         return []
 
 
-def _run_digest():
+def _run_digest(pre_fetched_items=None):
     DATA_DIR.mkdir(exist_ok=True)
-    # 1. Fetch items from feed agent
-    r1 = http.get(f'{FEED_URL}/fetch', timeout=45)
-    r1.raise_for_status()
-    items = r1.json().get('items', [])
+    # 1. Fetch items (or reuse pre-fetched from stream to avoid double-crawl)
+    if pre_fetched_items is not None:
+        items = pre_fetched_items
+    else:
+        r1 = http.get(f'{FEED_URL}/fetch', timeout=60)
+        r1.raise_for_status()
+        items = r1.json().get('items', [])
+
     if not items:
-        return {'picks': [], 'refreshed_at': int(time.time()), 'items_scanned': 0}
+        return {'picks': [], 'all_items': [], 'refreshed_at': int(time.time()), 'items_scanned': 0}
 
     # 2. Rank with editor agent
     r2 = http.post(EDITOR_URL, json={
@@ -120,8 +124,12 @@ def _run_digest():
     r2.raise_for_status()
     picks = r2.json().get('picks', [])
 
+    # Sort items for the all_items list: by tier then recency
+    sorted_items = sorted(items, key=lambda x: (x.get('tier', 5), -x.get('ts', 0)))
+
     result = {
-        'picks': picks,
+        'picks':        picks,
+        'all_items':    sorted_items,
         'refreshed_at': int(time.time()),
         'items_scanned': len(items),
     }
@@ -149,7 +157,6 @@ def digest():
 
 @app.route('/digest/refresh', methods=['POST'])
 def digest_refresh():
-    # Delete today's cache and force a fresh run
     cache_file = DATA_DIR / f'digest_{date.today()}.json'
     if cache_file.exists():
         cache_file.unlink()
@@ -157,6 +164,22 @@ def digest_refresh():
         return jsonify(_run_digest())
     except Exception as e:
         print(f"[{ts()}] [Orchestrator] /digest/refresh ERROR: {e}")
+        return jsonify(picks=[], error=str(e)), 500
+
+
+@app.route('/digest/rank', methods=['POST'])
+def digest_rank():
+    """Accept pre-fetched items (from stream) and run only the ranking step.
+    Avoids double-crawling when the frontend already streamed the feed."""
+    data  = request.json or {}
+    items = data.get('items', [])
+    cache_file = DATA_DIR / f'digest_{date.today()}.json'
+    if cache_file.exists():
+        cache_file.unlink()
+    try:
+        return jsonify(_run_digest(pre_fetched_items=items))
+    except Exception as e:
+        print(f"[{ts()}] [Orchestrator] /digest/rank ERROR: {e}")
         return jsonify(picks=[], error=str(e)), 500
 
 

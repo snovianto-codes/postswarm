@@ -47,7 +47,7 @@ def rank():
     print(f"[Editor Agent] Ranking {len(items)} items for '{role}'…")
 
     voice       = load_voice()
-    count       = min(5, len(items))
+    count       = min(10, len(items))
     items_text  = '\n'.join(
         f"[{i}] (Tier {it.get('tier', 3)} · {it['source']}) "
         f"{it['title'][:120]} — {it.get('summary', '')[:180]}"
@@ -65,7 +65,7 @@ Topics this person has recently posted about:
 {posted_text}
 
 Below are {len(items)} AI/tech stories from the last 36 hours.
-Pick the {count} BEST candidates for a LinkedIn post.
+Pick the {count} BEST candidates for a LinkedIn post. Return exactly {count} if there are enough stories, fewer only if the total is under {count}.
 
 Selection criteria (in priority order):
 1. Sparks real conversation — controversy, surprising data, practical impact
@@ -76,6 +76,7 @@ Selection criteria (in priority order):
 6. When quality is equal, prefer lower Tier numbers (Tier 1 = most authoritative)
 
 For each of your {count} picks, return:
+- rank: integer 1-{count} (1 = strongest pick)
 - index: the [N] from the story list
 - why_matters: 2 sentences. Be concrete about why THIS reader's Singapore/SEA audience cares. Not generic.
 - angle: one sentence. The specific hook or take to use. Written as if speaking in first person.
@@ -87,7 +88,7 @@ For each of your {count} picks, return:
 {items_text}
 ---END---
 
-Return ONLY a valid JSON array of {count} objects. No markdown fences, no preamble."""
+Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascending. No markdown fences, no preamble."""
 
     fallback_models = [model, 'gemini-2.5-flash', 'gemini-1.5-flash']
     seen_m = set()

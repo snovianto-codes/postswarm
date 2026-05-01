@@ -602,6 +602,88 @@ function BriefCard({ pick, rank, onDraftThis }) {
   );
 }
 
+function AllStoriesPanel({ items, picks, onDraftThis }) {
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState({});
+  const pickHashes = new Set((picks || []).map(p => p.hash));
+  const tierLabels = {1:'Lab blogs', 2:'Curated digests', 3:'Editorial / analysis', 4:'Community', 5:'Singapore / SEA'};
+
+  const handleDismiss = async (item) => {
+    setDismissed(d => ({...d, [item.hash]: true}));
+    await fetch('/feed/dismiss', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({hash: item.hash})});
+  };
+
+  const visible = items.filter(it => !dismissed[it.hash]);
+
+  return (
+    <div style={{marginTop:28, borderTop:'1px solid #1a1a1a', paddingTop:20}}>
+      <button onClick={() => setOpen(v => !v)}
+        style={{background:'none', border:'none', cursor:'pointer', display:'flex',
+          alignItems:'center', gap:6, color:'#444', fontSize:12, padding:0}}>
+        <span style={{fontSize:10, display:'inline-block', transition:'transform .2s',
+          transform: open ? 'rotate(90deg)' : 'rotate(0)'}}>▶</span>
+        {open ? 'Hide' : 'Browse'} all stories ({visible.length})
+        <span style={{color:'#2a2a2a', fontSize:11}}>— everything fetched this session</span>
+      </button>
+
+      {open && (
+        <div style={{marginTop:14}}>
+          {[1,2,3,4,5].map(tier => {
+            const group = visible.filter(it => it.tier === tier);
+            if (!group.length) return null;
+            return (
+              <div key={tier} style={{marginBottom:20}}>
+                <p style={{fontSize:10, color:'#333', textTransform:'uppercase',
+                  letterSpacing:'.06em', marginBottom:8}}>
+                  Tier {tier} · {tierLabels[tier]}
+                </p>
+                {group.map(item => {
+                  const isPick = pickHashes.has(item.hash);
+                  const ago = timeSince(item.ts * 1000);
+                  return (
+                    <div key={item.hash} style={{
+                      display:'flex', alignItems:'flex-start', gap:10,
+                      padding:'8px 10px', borderRadius:8, marginBottom:4,
+                      background: isPick ? '#0d1f0d' : 'transparent',
+                      border: `1px solid ${isPick ? '#1a3d1a' : '#151515'}`,
+                    }}>
+                      {isPick && <span style={{fontSize:9, color:'#10b981', fontWeight:700,
+                        flexShrink:0, marginTop:3}}>★</span>}
+                      <div style={{flex:1, minWidth:0}}>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer"
+                          style={{fontSize:12, color: isPick ? '#d4f5d4' : '#888',
+                            textDecoration:'none', lineHeight:1.4, display:'block'}}
+                          onMouseEnter={e=>e.target.style.color='#fff'}
+                          onMouseLeave={e=>e.target.style.color=isPick?'#d4f5d4':'#888'}>
+                          {item.title}
+                        </a>
+                        <span style={{fontSize:10, color:'#333'}}>{item.source} · {ago}</span>
+                      </div>
+                      <div style={{display:'flex', gap:6, flexShrink:0}}>
+                        <button onClick={() => onDraftThis(item, 'repost')}
+                          style={{fontSize:10, padding:'2px 7px', borderRadius:6, cursor:'pointer',
+                            background:'#0d1020', border:'1px solid #1e2840', color:'#4a7fa8'}}>
+                          repost
+                        </button>
+                        <button onClick={() => handleDismiss(item)}
+                          style={{fontSize:10, padding:'2px 7px', borderRadius:6, cursor:'pointer',
+                            background:'#111', border:'1px solid #1f1f1f', color:'#333'}}>
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function BriefView({ backendStatus, onDraftThis }) {
   const [briefData,      setBriefData]      = useState(null);
   const [loading,        setLoading]        = useState(false);
@@ -643,35 +725,34 @@ function BriefView({ backendStatus, onDraftThis }) {
     force ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
-      if (force) {
-        // Stream crawl progress, then rank
-        await runFeedStream();
-        const r = await fetch('/digest/refresh', { method: 'POST' });
-        if (!r.ok) throw new Error(`Server returned ${r.status}`);
-        const data = await r.json();
-        setBriefData(data);
-        // refresh sources panel
-        fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
-      } else {
+      // Check cache first (unless forcing)
+      if (!force) {
         const r = await fetch('/digest');
         if (!r.ok) throw new Error(`Server returned ${r.status}`);
         const data = await r.json();
         if (data.cached) {
           setBriefData(data);
-          fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
-        } else {
-          // Not cached — run stream then fetch digest
-          await runFeedStream();
-          const r2 = await fetch('/digest');
-          if (!r2.ok) throw new Error(`Server returned ${r2.status}`);
-          const data2 = await r2.json();
-          setBriefData(data2);
-          fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
+          fetch('/feed/sources').then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});
+          return;
         }
       }
+      // Stream crawl progress → get items back → rank without double-fetching
+      const freshItems = await runFeedStream();
+      setCrawlProgress({ ranking: true });   // show ranking state
+      const r2 = await fetch('/digest/rank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: freshItems || [] }),
+      });
+      if (!r2.ok) throw new Error(`Server returned ${r2.status}`);
+      const data2 = await r2.json();
+      setBriefData(data2);
+      fetch('/feed/sources').then(r=>r.json()).then(d=>setSources(d.sources||[])).catch(()=>{});
     } catch(e) {
+      console.error('loadDigest error:', e);
       setError('Could not load digest. Is the backend running?');
     } finally {
+      setCrawlProgress(null);
       setLoading(false);
       setRefreshing(false);
     }
@@ -769,13 +850,18 @@ function BriefView({ backendStatus, onDraftThis }) {
                 </div>
               )}
             </div>
-          ) : (
-            <div style={{display:'flex', alignItems:'center', gap:10, padding:'20px 0'}}>
-              <svg className="spin" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                stroke="#7c3aed" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
-              <span style={{fontSize:13, color:'#555'}}>Ranking stories…</span>
+          ) : crawlProgress?.ranking ? (
+            <div style={{background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'20px 22px'}}>
+              <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
+                <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="#7c3aed" strokeWidth="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
+                <span style={{fontSize:12, color:'#888'}}>Gemini is picking the top 10 stories… (~20-30s)</span>
+              </div>
+              <p style={{fontSize:11, color:'#333', marginLeft:24}}>
+                Scoring by: relevance to your role → SEA angle → novelty vs recent posts → conversation potential
+              </p>
             </div>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -803,6 +889,11 @@ function BriefView({ backendStatus, onDraftThis }) {
             </p>
           </div>
         </div>
+      )}
+
+      {/* All Stories panel */}
+      {briefData?.all_items?.length > 0 && (
+        <AllStoriesPanel items={briefData.all_items} picks={picks} onDraftThis={onDraftThis} />
       )}
 
       {/* Sources panel */}
