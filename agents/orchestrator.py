@@ -152,7 +152,7 @@ def digest():
         return jsonify(_run_digest())
     except Exception as e:
         print(f"[{ts()}] [Orchestrator] /digest ERROR: {e}")
-        return jsonify(picks=[], error=str(e), items_scanned=0), 500
+        return jsonify(picks=[], error='Internal error', items_scanned=0), 500
 
 
 @app.route('/digest/refresh', methods=['POST'])
@@ -164,7 +164,7 @@ def digest_refresh():
         return jsonify(_run_digest())
     except Exception as e:
         print(f"[{ts()}] [Orchestrator] /digest/refresh ERROR: {e}")
-        return jsonify(picks=[], error=str(e)), 500
+        return jsonify(picks=[], error='Internal error'), 500
 
 
 @app.route('/digest/rank', methods=['POST'])
@@ -172,7 +172,7 @@ def digest_rank():
     """Accept pre-fetched items (from stream) and run only the ranking step.
     Avoids double-crawling when the frontend already streamed the feed."""
     data  = request.json or {}
-    items = data.get('items', [])
+    items = (data.get('items', []) or [])[:200]  # cap to prevent oversized Gemini prompts
     cache_file = DATA_DIR / f'digest_{date.today()}.json'
     if cache_file.exists():
         cache_file.unlink()
@@ -180,7 +180,7 @@ def digest_rank():
         return jsonify(_run_digest(pre_fetched_items=items))
     except Exception as e:
         print(f"[{ts()}] [Orchestrator] /digest/rank ERROR: {e}")
-        return jsonify(picks=[], error=str(e)), 500
+        return jsonify(picks=[], error='Internal error'), 500
 
 
 @app.route('/feed/dismiss', methods=['POST'])
@@ -259,7 +259,7 @@ def run():
             yield from make_pipeline(topic, take, tone, model, role, post_type)
         except Exception as e:
             print(f"[{ts()}] [Orchestrator] [ERROR] Pipeline crashed: {e}")
-            yield sse({'type': 'error', 'message': str(e)})
+            yield sse({'type': 'error', 'message': 'Pipeline error — check server logs'})
 
     return Response(
         stream_with_context(generate()),
@@ -464,4 +464,4 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
 
 if __name__ == '__main__':
     banner(f"PostSwarm Orchestrator\n  http://localhost:8080  ←  open this in your browser")
-    app.run(host='0.0.0.0', port=8080, debug=False, threaded=True)
+    app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)

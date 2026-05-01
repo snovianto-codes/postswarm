@@ -2,7 +2,7 @@
 Called by Research Agent. If topic contains a URL, fetches and reads it first.
 Otherwise generates grounded research points from Gemini.
 """
-import os, re, json, traceback, ipaddress
+import os, re, json, traceback, ipaddress, socket
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 import urllib.request
@@ -68,27 +68,44 @@ def _validate_url(url: str) -> None:
     if parsed.scheme not in ('https', 'http'):
         raise ValueError(f"Scheme '{parsed.scheme}' not allowed — only http/https")
     hostname = parsed.hostname or ''
-    # Block IP-based access to private/loopback ranges
-    try:
-        addr = ipaddress.ip_address(hostname)
-        if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-            raise ValueError(f"Private/reserved IP not allowed: {hostname}")
-    except ValueError as e:
-        if 'not allowed' in str(e):
-            raise
-        # hostname is a domain name, not an IP — that's fine
-    # Block localhost by name
-    if hostname.lower() in ('localhost', 'metadata.google.internal'):
+    if not hostname:
+        raise ValueError("No hostname in URL")
+
+    # Block localhost/metadata by name before DNS resolution
+    blocked_names = {'localhost', 'metadata.google.internal', '169.254.169.254'}
+    if hostname.lower() in blocked_names:
         raise ValueError(f"Blocked hostname: {hostname}")
+
+    # Resolve hostname to IPs and block private/reserved ranges
+    # This catches decimal (2130706433), hex (0x7f000001), and short-form (127.1) bypasses
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+        for info in resolved:
+            ip_str = info[4][0]
+            addr = ipaddress.ip_address(ip_str)
+            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
+                raise ValueError(f"Resolved to private/reserved IP: {ip_str}")
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError(f"Could not resolve hostname: {hostname}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Validate redirect destination before following."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_url(newurl)  # block redirects to private IPs
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def fetch_url(url: str) -> str:
     """Fetch a URL and return stripped plain text (capped at MAX_CHARS)."""
     _validate_url(url)
+    opener = urllib.request.build_opener(_NoRedirect)
     req = urllib.request.Request(url, headers={
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
     })
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with opener.open(req, timeout=15) as resp:
         # Guard against huge responses
         html = resp.read(MAX_CHARS * 10).decode('utf-8', errors='replace')
     stripper = _Stripper()

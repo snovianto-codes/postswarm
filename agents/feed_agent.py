@@ -227,7 +227,7 @@ def save_inspiration():
     c = _db()
     c.execute(
         "INSERT INTO inspiration(url,title,body,saved_at) VALUES(?,?,?,?)",
-        (data.get('url', ''), data.get('title', ''), data.get('body', ''), int(time.time())),
+        (data.get('url', '')[:500], data.get('title', '')[:200], data.get('body', '')[:2000], int(time.time())),
     )
     c.commit()
     print(f"[Feed Agent] Saved inspiration: {data.get('title', '')[:60]}")
