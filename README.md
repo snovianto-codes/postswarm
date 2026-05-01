@@ -1,27 +1,31 @@
 # PostSwarm 🐝
 
-> **⚠️ Prototype — built for learning, not production. Rough edges expected.**
+> **⚠️ Prototype — built for local use, not production. Rough edges expected.**
 
-A multi-agent system that generates LinkedIn posts by coordinating 7 specialised AI agents. Each agent handles one job: research, fact-checking, counter-arguments, SEA perspective, hook writing, and final assembly. They run in parallel where possible and stream live progress to the browser.
+A multi-agent system for LinkedIn content — surfaces the day's most relevant AI news, ranks them for your audience, and drafts posts in your voice. Two modes: **Today's Brief** (daily feed digest) and **Write Post** (full agent pipeline).
 
 ---
 
 ## What it does
 
-Give it a topic (plain text or paste a URL to an article). Seven agents coordinate:
+### Today's Brief
+Monitors 17 RSS sources across AI labs, tech media, and Singapore/SEA outlets. Every morning (or on demand), an editor agent ranks the top 10 stories using Gemini — scored by relevance to your role, SEA angle, novelty vs recent posts, and conversation potential. One click drafts a post from any story.
+
+### Write Post
+Give it a topic or paste a URL. Nine agents coordinate to produce a LinkedIn post:
 
 ```
 Orchestrator (port 8080)
+├── Feed Agent   (5008)  — RSS crawler, 17 sources, SQLite dedup
+├── Editor Agent (5009)  — ranks stories via Gemini, top 10 picks
 ├── Research Agent (5001)
-│   ├── Web Agent (5002)          — fetches the URL or generates research points
-│   ├── Fact Checker (5003)       — verifies and cleans the research
-│   └── Devil's Advocate (5004)   — generates honest counter-arguments
-├── Perspective Agent (5005)      — adds SEA / role-specific angle  [parallel]
-├── Hook Agent (5006)             — writes 5 opening line variants  [parallel]
+│   ├── Web Agent (5002)          — fetches URL / generates research
+│   ├── Fact Checker (5003)       — verifies claims
+│   └── Devil's Advocate (5004)   — honest counter-arguments
+├── Perspective Agent (5005)      — SEA / role-specific angle  [parallel]
+├── Hook Agent (5006)             — 5 opening line variants    [parallel]
 └── Writer Agent (5007)           — assembles the final post
 ```
-
-The browser streams live agent activity via SSE. Each card shows what the agent is doing in real time. After completion, expand any card to see exactly what it found or produced.
 
 ---
 
@@ -29,7 +33,7 @@ The browser streams live agent activity via SSE. Each card shows what the agent 
 
 **1. Clone**
 ```bash
-git clone https://github.com/yourusername/postswarm.git
+git clone https://github.com/snovianto-codes/postswarm.git
 cd postswarm
 ```
 
@@ -39,40 +43,94 @@ cp .env.example .env
 # Edit .env:
 # GEMINI_API_KEY=your_key_here
 ```
-Get a free key at [Google AI Studio](https://aistudio.google.com/).
+Get a key at [Google AI Studio](https://aistudio.google.com/). Gemini 2.5 Flash is the default — free tier works, pay-as-you-go recommended for heavier use.
 
-**3. Start**
+**3. Install dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+**4. Start**
 ```bash
 bash start.sh
 ```
 Open **http://localhost:8080**
 
-**4. Stop**
+**5. Stop**
 ```bash
 bash stop.sh
 ```
 
-Logs are written to `logs/*.log` (one file per agent). If the output is blank or agents complete suspiciously fast, restart with `bash stop.sh && bash start.sh` — this usually means a stale process hit a rate limit.
+Logs in `logs/*.log` (one per agent). If things complete suspiciously fast or show blank output, run `bash stop.sh && bash start.sh` — usually a stale process.
 
 ---
 
-## How to use
+## Today's Brief
+
+Opens by default. On first load each day, PostSwarm:
+1. Crawls all 17 sources (live progress bar shows each feed as it's checked)
+2. Sends fresh stories to the Editor Agent (Gemini ranks top 10)
+3. Caches the result — instant on subsequent opens the same day
+
+Each story card shows:
+- **Why it matters** — specific to your Singapore/SEA audience
+- **Suggested angle** — a ready-made take in your voice
+- **Source URL** — always visible so you can verify before drafting
+- **Novelty score** — how different it is from your recent posts
+- **Format badge** — repost (short reaction) or opinion (full post)
+
+**Draft my opinion** → full 7-agent pipeline, 100–160 words, your complete take  
+**Draft repost** → 50–80 word reaction + source link, skips the deep research pipeline
+
+Scroll below the picks to **Browse all stories** — every item fetched, grouped by source tier, with dismiss and repost buttons.
+
+---
+
+## RSS Sources
+
+| Tier | Sources | Window |
+|------|---------|--------|
+| 1 — Lab blogs | OpenAI, Google AI, Google DeepMind, Hugging Face | 72h |
+| 2 — Curated digests | TLDR AI, Ben's Bites, MarkTechPost | 48h |
+| 3 — Editorial / analysis | MIT Tech Review, TechCrunch, Mollick, Simon Willison, Interconnects, Latent Space, VentureBeat | 36h |
+| 4 — Community | Hacker News AI (≥80 points) | 36h |
+| 5 — Singapore / SEA | Tech Wire Asia, CNA Tech | 36h |
+
+Tier 1 sources use a wider 72-hour window since they publish infrequently. All sources verified live as of May 2026.
+
+---
+
+## Write Post
 
 | Field | What it does |
 |-------|-------------|
-| **Topic** | Plain text or paste a URL — Web Agent will fetch and read the article |
-| **My Take** | Your angle or opinion |
+| **Topic** | Plain text or paste a URL — Web Agent fetches and reads the article |
+| **My Take** | Your angle or opinion — shapes the whole post |
 | **Tone** | Skeptical / Curious / Excited / Provocative / Balanced |
-| **Role** | Your professional perspective (People Manager, Engineer, CTO…) — shapes the angle |
-| **Model** | Gemini model to use — higher quality = slower/more expensive |
+| **Role** | Professional perspective (People Manager, Engineer, CTO…) |
+| **Model** | Gemini model — Gemini 2.5 Flash (default) or 2.5 Pro for more nuanced drafts |
 
-Click **"View details"** on any completed agent card to see what it produced.
+Click **View details** on any completed agent card to see exactly what it produced.
 
 ---
 
 ## Customise your voice
 
-Edit `VOICE.md` to define the writing persona. The Writer Agent reads this on every run. Write it in first person, describe your communication style, what topics you care about, and phrases to avoid.
+Edit `VOICE.md` — the Writer Agent reads it on every run. Covers writing style, banned words, post structure, tone, and closing line rules. The more specific you make it, the less AI-generic the output.
+
+Add 2–3 examples of your real past posts at the bottom for best results.
+
+---
+
+## LinkedIn Bookmarklet
+
+Save any LinkedIn post as inspiration. Create a browser bookmark with this as the URL:
+
+```
+javascript:(function(){var t=document.title,u=window.location.href,s=window.getSelection().toString()||'',b=document.querySelector('.feed-shared-update-v2__description,.update-components-text')?.innerText||s||'';fetch('http://localhost:8080/feed/inspiration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u,title:t,body:b.slice(0,1000)})}).then(function(){var d=document.createElement('div');d.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999;padding:10px 20px;background:#0d1f17;border:1px solid #10b981;border-radius:8px;color:#10b981;font-family:sans-serif;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.5)';d.textContent='✓ Saved to PostSwarm';document.body.appendChild(d);setTimeout(function(){d.remove()},2500)}).catch(function(){alert('PostSwarm not running. Start it first at localhost:8080')})})();
+```
+
+Click it on any LinkedIn post to save it. Saved posts appear in the inspiration panel.
 
 ---
 
@@ -82,6 +140,8 @@ Edit `VOICE.md` to define the writing persona. The Writer Agent reads this on ev
 postswarm/
 ├── agents/
 │   ├── orchestrator.py           # Port 8080 — serves HTML + pipeline coordinator
+│   ├── feed_agent.py             # Port 5008 — RSS crawler, SQLite dedup, inspiration store
+│   ├── editor_agent.py           # Port 5009 — ranks feed items, returns top 10 picks
 │   ├── research_agent.py         # Port 5001
 │   ├── web_agent.py              # Port 5002
 │   ├── factchecker_agent.py      # Port 5003
@@ -91,10 +151,12 @@ postswarm/
 │   └── writer_agent.py           # Port 5007
 ├── PostSwarm.html                # Single-file React frontend (no build step)
 ├── VOICE.md                      # Writing persona — edit this
-├── start.sh                      # Start all 8 processes
+├── bookmarklet.js                # LinkedIn bookmarklet (readable source)
+├── start.sh                      # Start all 9 processes
 ├── stop.sh                       # Stop all agents
 ├── requirements.txt
 ├── .env.example                  # Copy to .env and add your API key
+├── data/                         # SQLite DB + daily digest cache (auto-created)
 └── logs/                         # Per-agent logs (auto-created)
 ```
 
@@ -102,24 +164,25 @@ postswarm/
 
 ## Stack
 
-- **Backend**: Python 3.11+, Flask
-- **AI**: Google Gemini (`google-genai` SDK) — model selectable per run
-- **Frontend**: React 18 (CDN), Tailwind CSS, vanilla SSE — no build step needed
+- **Backend**: Python 3.11+, Flask, feedparser
+- **AI**: Google Gemini (`google-genai` SDK) — 2.5 Flash default, 2.5 Pro available
+- **Frontend**: React 18 (CDN), vanilla SSE — no build step needed
+- **Storage**: SQLite (`data/seen.db`) for feed dedup and inspiration store
 - **Concurrency**: `ThreadPoolExecutor` for parallel agent calls
 
 ---
 
 ## Security (prototype limitations)
 
-Designed for **local use only**. Mitigations applied:
+Designed for **local use only**.
 
 | Risk | Status |
 |------|--------|
 | SSRF | ✅ URL validation blocks private IPs, `file://`, cloud metadata endpoints |
 | Input limits | ✅ Topic ≤ 2000 chars, take ≤ 500, role ≤ 100 |
-| Model whitelist | ✅ Only the 4 listed Gemini models accepted |
+| Model whitelist | ✅ Only listed Gemini models accepted |
 | CORS | ✅ Worker agents restricted to localhost origins |
-| Prompt injection | ⚠️ Inputs are delimited in prompts — LLMs remain inherently susceptible |
+| Prompt injection | ⚠️ Inputs are delimited — LLMs remain inherently susceptible |
 | Authentication | ❌ None — localhost only |
 | Rate limiting | ❌ None — add before any shared deployment |
 | HTTPS | ❌ None — HTTP only, fine for localhost |
@@ -128,31 +191,14 @@ Designed for **local use only**. Mitigations applied:
 
 ---
 
-## What's next (v2 ideas)
+## What's next
 
-This prototype uses Gemini only. Ideas for the next iteration:
-
-- **Multi-model routing** — different agents use different models by task (Gemini for research, Claude for writing, etc.)
-- **Pluggable model layer** — support OpenAI, Claude, Mistral alongside Gemini
-- **Live web search** — replace URL-only research with Tavily or Serper
-- **Judge agent** — scores drafts before accepting them
-- **Memory** — build a personal style profile from posts you actually publish
-- **Post scheduler** — queue and publish directly to LinkedIn
+- **Past posts memory** — feed your actual LinkedIn history so the editor avoids repetition automatically
+- **Multi-model routing** — Claude for writing, Gemini for research
+- **Auto-schedule** — queue and publish directly to LinkedIn
+- **Judge agent** — scores drafts before surfacing them
+- **Slack/Telegram digest** — push the daily brief to a channel instead of opening the app
 
 ---
 
-## Requirements
-
-```
-flask
-flask-cors
-google-genai
-requests
-python-dotenv
-```
-
-Python 3.11+ recommended. Ports 5001–5007 and 8080 must be free.
-
----
-
-*Built by [Novianto](https://www.linkedin.com/in/snovianto/) — prototype, expect rough edges and the occasional hallucinated Gartner statistic.*
+*Built by [Novianto](https://www.linkedin.com/in/snovianto/) — Singapore-based People Manager in tech. Prototype, expect rough edges.*
