@@ -4,7 +4,7 @@ Also handles /inspiration endpoint for bookmarklet captures.
 """
 import os, json, time, hashlib, sqlite3, re, traceback
 from pathlib import Path
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
 import feedparser
 from dotenv import load_dotenv
@@ -20,7 +20,15 @@ CORS(app, resources={r"/*": {"origins": [
 DATA_DIR       = Path(__file__).parent.parent / 'data'
 DB_PATH        = DATA_DIR / 'seen.db'
 PER_SOURCE_CAP = 8
-MAX_AGE_HOURS  = 36
+
+# Wider window for lower-volume authoritative sources so we don't miss them
+TIER_AGE_HOURS = {
+    1: 72,   # Lab blogs (OpenAI, Google AI, DeepMind, Hugging Face) — post infrequently
+    2: 48,   # Curated digests
+    3: 36,   # Editorial / analysis
+    4: 36,   # Community
+    5: 36,   # Singapore/SEA
+}
 
 # (tier, name, rss_url)
 # Tier 1 = official lab blogs, Tier 2 = curated digests,
@@ -78,42 +86,53 @@ def _strip_html(text):
     return _TAG_RE.sub(' ', text or '').strip()
 
 
+def _fetch_source(tier, source, url):
+    """Fetch one source. Returns (items, error_or_None)."""
+    cutoff = time.time() - TIER_AGE_HOURS.get(tier, 36) * 3600
+    items = []
+    try:
+        feed = feedparser.parse(url)
+        count = 0
+        for e in feed.entries:
+            if count >= PER_SOURCE_CAP:
+                break
+            pub_struct = e.get('published_parsed') or e.get('updated_parsed')
+            pub = time.mktime(pub_struct) if pub_struct else time.time()
+            if pub < cutoff:
+                continue
+            link = e.get('link', '')
+            if not link:
+                continue
+            h       = hashlib.sha1(link.encode()).hexdigest()
+            summary = _strip_html(e.get('summary') or e.get('description') or '')[:500]
+            items.append({
+                'hash':    h,
+                'title':   e.get('title', '').strip()[:200],
+                'url':     link,
+                'source':  source,
+                'summary': summary,
+                'ts':      int(pub),
+                'tier':    tier,
+            })
+            count += 1
+        return items, None
+    except Exception as err:
+        return [], str(err)
+
+
 def fetch_all():
-    cutoff = time.time() - MAX_AGE_HOURS * 3600
     raw = []
-    ok_sources  = []
+    ok_sources   = []
     fail_sources = []
 
     for tier, source, url in SOURCES:
-        try:
-            feed = feedparser.parse(url)
-            count = 0
-            for e in feed.entries:
-                if count >= PER_SOURCE_CAP:
-                    break
-                pub_struct = e.get('published_parsed') or e.get('updated_parsed')
-                pub = time.mktime(pub_struct) if pub_struct else time.time()
-                if pub < cutoff:
-                    continue
-                link = e.get('link', '')
-                if not link:
-                    continue
-                h       = hashlib.sha1(link.encode()).hexdigest()
-                summary = _strip_html(e.get('summary') or e.get('description') or '')[:500]
-                raw.append({
-                    'hash':    h,
-                    'title':   e.get('title', '').strip()[:200],
-                    'url':     link,
-                    'source':  source,
-                    'summary': summary,
-                    'ts':      int(pub),
-                    'tier':    tier,
-                })
-                count += 1
-            ok_sources.append(source)
-        except Exception as err:
+        items, err = _fetch_source(tier, source, url)
+        if err:
             fail_sources.append(source)
             print(f"[Feed Agent] ✗ {source}: {err}")
+        else:
+            raw.extend(items)
+            ok_sources.append(source)
 
     print(f"[Feed Agent] Pulled {len(raw)} raw items from {len(ok_sources)} sources "
           f"({len(fail_sources)} failed)")
@@ -151,6 +170,31 @@ def fetch():
     items = fetch_all()
     print(f"[Feed Agent] → Returning {len(items)} fresh items")
     return jsonify(items=items, count=len(items))
+
+
+@app.route('/fetch/stream')
+def fetch_stream():
+    """SSE endpoint — streams per-source progress then final item list."""
+    def generate():
+        raw = []
+        total = len(SOURCES)
+        for i, (tier, source, url) in enumerate(SOURCES):
+            # notify UI: starting this source
+            yield f"data: {json.dumps({'type':'source_start','source':source,'tier':tier,'index':i,'total':total})}\n\n"
+            items, err = _fetch_source(tier, source, url)
+            count = len(items)
+            raw.extend(items)
+            status = 'error' if err else ('ok' if count > 0 else 'empty')
+            yield f"data: {json.dumps({'type':'source_done','source':source,'tier':tier,'count':count,'status':status,'index':i,'total':total})}\n\n"
+
+        fresh = _dedupe(raw)
+        yield f"data: {json.dumps({'type':'done','items':fresh,'count':len(fresh),'scanned':len(raw)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 @app.route('/dismiss', methods=['POST'])
@@ -199,6 +243,21 @@ def get_inspirations():
     items = [{'id': r[0], 'url': r[1], 'title': r[2], 'body': r[3], 'saved_at': r[4]}
              for r in rows]
     return jsonify(items=items)
+
+
+@app.route('/sources')
+def sources():
+    """Returns all configured sources and how many items each has in the DB."""
+    c = _db()
+    rows = c.execute(
+        "SELECT source, COUNT(*) FROM seen GROUP BY source"
+    ).fetchall()
+    counts = {r[0]: r[1] for r in rows}
+    result = [
+        {'tier': tier, 'name': name, 'count': counts.get(name, 0)}
+        for tier, name, _ in SOURCES
+    ]
+    return jsonify(sources=result)
 
 
 @app.route('/recent_posted')

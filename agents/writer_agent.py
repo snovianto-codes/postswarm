@@ -33,16 +33,17 @@ def health():
 @app.route('/run', methods=['POST'])
 def run():
     data = request.json or {}
-    topic    = data.get('topic', '')
-    take     = data.get('take', '')
-    tone     = data.get('tone', 'Skeptical')
-    research = data.get('research', {})
-    hooks    = data.get('hooks', [])
-    insights = data.get('insights', [])
-    model    = data.get('model', FALLBACK_MODEL)
-    role     = data.get('role', 'People Manager')
+    topic     = data.get('topic', '')
+    take      = data.get('take', '')
+    tone      = data.get('tone', 'Skeptical')
+    research  = data.get('research', {})
+    hooks     = data.get('hooks', [])
+    insights  = data.get('insights', [])
+    model     = data.get('model', FALLBACK_MODEL)
+    role      = data.get('role', 'People Manager')
+    post_type = data.get('post_type', 'opinion')  # 'opinion' or 'repost'
     primary_model = model
-    print(f"[Writer Agent] ← Received | Writing post for: {topic[:50]}...")
+    print(f"[Writer Agent] ← Received | Writing {post_type} for: {topic[:50]}...")
 
     voice = load_voice()
     verified   = research.get('verified', [])
@@ -55,7 +56,37 @@ def run():
     hooks_text     = '\n'.join(f"{i+1}. {h}" for i, h in enumerate(hooks[:5])) if hooks else "No hooks provided."
     source_note    = f"\nSource article: {source_url}\nUse findings from this article as the basis for the post — make it clear the post is a reaction to this specific article." if source_url else ""
 
-    prompt = f"""You are ghostwriting a LinkedIn post for the author described in this voice profile:
+    if post_type == 'repost':
+        prompt = f"""You are ghostwriting a short LinkedIn repost for the author described in this voice profile:
+
+---VOICE PROFILE---
+{voice}
+---END VOICE---
+
+## Assignment
+Topic/article: {topic[:2000]}
+Author's take: {(take or "React honestly to this")[:500]}
+{source_note}
+
+Write a SHORT repost-style reaction — the kind where someone shares a link and adds a quick sharp comment.
+
+## Format
+- 2-4 sentences MAX. 50-80 words total.
+- First sentence: your honest reaction (agree, push back, or add a nuance). No "I just read..." opener.
+- Second sentence: the concrete implication for your team or Singapore/SEA context.
+- Optional third sentence: a question or flat observation — only if it adds something.
+- End with the source URL on its own line if one is in the topic.
+- 0-2 hashtags. Often none.
+
+## Hard rules
+- Plain English. Short sentences.
+- BANNED words: leverage, robust, seamless, empower, unlock, paradigm, game-changing, revolutionary, groundbreaking
+- No "Here's the thing:" — no triadic lists — no AI performance
+- Sound like a person, not a newsletter
+
+Return ONLY the post text. No preamble."""
+    else:
+        prompt = f"""You are ghostwriting a LinkedIn post for the author described in this voice profile:
 
 ---VOICE PROFILE---
 {voice}

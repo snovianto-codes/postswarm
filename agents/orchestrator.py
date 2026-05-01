@@ -187,15 +187,40 @@ def feed_inspiration():
         return jsonify(ok=False)
 
 
+@app.route('/feed/sources')
+def feed_sources():
+    try:
+        r = http.get(f'{FEED_URL}/sources', timeout=5)
+        return jsonify(r.json())
+    except Exception:
+        return jsonify(sources=[])
+
+
+@app.route('/feed/stream')
+def feed_stream():
+    """Proxy the feed agent's SSE progress stream to the frontend."""
+    def generate():
+        with http.get(f'{FEED_URL}/fetch/stream', stream=True, timeout=120) as r:
+            for line in r.iter_lines():
+                if line:
+                    yield line.decode('utf-8') + '\n\n'
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
+
+
 # ── Write pipeline ────────────────────────────────────────────────────
 
 @app.route('/run')
 def run():
-    topic = request.args.get('topic', '')[:MAX_TOPIC_LEN]
-    take  = request.args.get('take',  '')[:MAX_TAKE_LEN]
-    tone  = request.args.get('tone',  'Skeptical')[:50]
-    model = request.args.get('model', 'gemini-2.5-flash')
-    role  = request.args.get('role',  'People Manager')[:MAX_ROLE_LEN]
+    topic     = request.args.get('topic',     '')[:MAX_TOPIC_LEN]
+    take      = request.args.get('take',      '')[:MAX_TAKE_LEN]
+    tone      = request.args.get('tone',      'Skeptical')[:50]
+    model     = request.args.get('model',     'gemini-2.5-flash')
+    role      = request.args.get('role',      'People Manager')[:MAX_ROLE_LEN]
+    post_type = request.args.get('post_type', 'opinion')[:20]
 
     if model not in ALLOWED_MODELS:
         abort(400, f"Unknown model. Allowed: {', '.join(sorted(ALLOWED_MODELS))}")
@@ -208,7 +233,7 @@ def run():
 
     def generate():
         try:
-            yield from make_pipeline(topic, take, tone, model, role)
+            yield from make_pipeline(topic, take, tone, model, role, post_type)
         except Exception as e:
             print(f"[{ts()}] [Orchestrator] [ERROR] Pipeline crashed: {e}")
             yield sse({'type': 'error', 'message': str(e)})
@@ -222,7 +247,7 @@ def run():
 
 # ── Pipeline ──────────────────────────────────────────────────────────
 
-def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager'):
+def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager', post_type='opinion'):
 
     # ── 1. Research ─────────────────────────────────────────────────
     print(f"[{ts()}] [Orchestrator] ▶  STAGE 1 — Research Agent")
@@ -389,7 +414,7 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
         r = http.post(WRITER_URL,
                       json={'topic': topic, 'take': take, 'tone': tone,
                             'research': research, 'hooks': hooks, 'insights': insights,
-                            'model': model, 'role': role},
+                            'model': model, 'role': role, 'post_type': post_type},
                       timeout=TIMEOUT)
         r.raise_for_status()
         writer_resp = r.json()

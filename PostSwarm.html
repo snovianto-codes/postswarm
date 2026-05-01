@@ -603,22 +603,72 @@ function BriefCard({ pick, rank, onDraftThis }) {
 }
 
 function BriefView({ backendStatus, onDraftThis }) {
-  const [briefData,    setBriefData]    = useState(null);
-  const [loading,      setLoading]      = useState(false);
-  const [error,        setError]        = useState(null);
-  const [refreshing,   setRefreshing]   = useState(false);
+  const [briefData,      setBriefData]      = useState(null);
+  const [loading,        setLoading]        = useState(false);
+  const [error,          setError]          = useState(null);
+  const [refreshing,     setRefreshing]     = useState(false);
+  const [sources,        setSources]        = useState([]);
+  const [showSources,    setShowSources]    = useState(false);
+  const [crawlProgress,  setCrawlProgress]  = useState(null); // {current, total, name, tier, done:[]}
+  const streamRef = useRef(null);
+
+  const runFeedStream = () => new Promise((resolve, reject) => {
+    if (streamRef.current) { streamRef.current.close(); streamRef.current = null; }
+    setCrawlProgress({ current: 0, total: 18, name: '', tier: 0, done: [] });
+    const evs = new EventSource('/feed/stream');
+    streamRef.current = evs;
+    evs.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'source_start') {
+          setCrawlProgress(p => ({ ...p, current: msg.index + 1, total: msg.total,
+            name: msg.source, tier: msg.tier }));
+        } else if (msg.type === 'source_done') {
+          setCrawlProgress(p => ({
+            ...p,
+            done: [...(p?.done || []), { name: msg.source, count: msg.count, status: msg.status, tier: msg.tier }],
+          }));
+        } else if (msg.type === 'done') {
+          evs.close(); streamRef.current = null;
+          setCrawlProgress(null);
+          resolve(msg.items);
+        }
+      } catch(_) {}
+    };
+    evs.onerror = () => { evs.close(); streamRef.current = null; setCrawlProgress(null); reject(new Error('stream error')); };
+  });
 
   const loadDigest = async (force = false) => {
     if (loading || refreshing) return;
     force ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
-      const url = force ? '/digest/refresh' : '/digest';
-      const opts = force ? { method:'POST' } : {};
-      const r = await fetch(url, opts);
-      if (!r.ok) throw new Error(`Server returned ${r.status}`);
-      const data = await r.json();
-      setBriefData(data);
+      if (force) {
+        // Stream crawl progress, then rank
+        await runFeedStream();
+        const r = await fetch('/digest/refresh', { method: 'POST' });
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        const data = await r.json();
+        setBriefData(data);
+        // refresh sources panel
+        fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
+      } else {
+        const r = await fetch('/digest');
+        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+        const data = await r.json();
+        if (data.cached) {
+          setBriefData(data);
+          fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
+        } else {
+          // Not cached — run stream then fetch digest
+          await runFeedStream();
+          const r2 = await fetch('/digest');
+          if (!r2.ok) throw new Error(`Server returned ${r2.status}`);
+          const data2 = await r2.json();
+          setBriefData(data2);
+          fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
+        }
+      }
     } catch(e) {
       setError('Could not load digest. Is the backend running?');
     } finally {
@@ -629,7 +679,11 @@ function BriefView({ backendStatus, onDraftThis }) {
 
   // Load on mount if backend is online
   useEffect(() => {
-    if (backendStatus === 'online') loadDigest();
+    if (backendStatus === 'online') {
+      loadDigest();
+      fetch('/feed/sources').then(r => r.json()).then(d => setSources(d.sources || [])).catch(() => {});
+    }
+    return () => { if (streamRef.current) { streamRef.current.close(); streamRef.current = null; } };
   }, [backendStatus]);
 
   const picks         = briefData?.picks || [];
@@ -682,14 +736,46 @@ function BriefView({ backendStatus, onDraftThis }) {
         </div>
       )}
 
-      {backendStatus === 'online' && loading && (
-        <div style={{display:'flex', flexDirection:'column', alignItems:'center', padding:'60px 0', gap:14}}>
-          <svg className="spin" width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="#7c3aed" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
-          <p style={{fontSize:13, color:'#555', textAlign:'center', lineHeight:1.7}}>
-            Scanning 19 sources and ranking stories…<br/>
-            <span style={{color:'#3a3a3a', fontSize:11}}>First load takes ~30 seconds. Cached after that.</span>
-          </p>
+      {backendStatus === 'online' && (loading || refreshing) && (
+        <div style={{padding:'24px 0'}}>
+          {crawlProgress ? (
+            <div style={{background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'20px 22px'}}>
+              {/* Progress bar */}
+              <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:14}}>
+                <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="#7c3aed" strokeWidth="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
+                <span style={{fontSize:12, color:'#555'}}>
+                  Crawling {crawlProgress.current}/{crawlProgress.total} — <span style={{color:'#888'}}>{crawlProgress.name}</span>
+                </span>
+              </div>
+              <div style={{height:3, background:'#1a1a1a', borderRadius:4, overflow:'hidden', marginBottom:14}}>
+                <div style={{height:'100%', background:'#7c3aed', borderRadius:4,
+                  width: `${(crawlProgress.current/crawlProgress.total)*100}%`,
+                  transition:'width .3s ease'}}/>
+              </div>
+              {/* Source chips — done ones */}
+              {crawlProgress.done.length > 0 && (
+                <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
+                  {crawlProgress.done.map(s => (
+                    <span key={s.name} style={{
+                      fontSize:10, padding:'2px 7px', borderRadius:12,
+                      background: s.count > 0 ? '#0d1f17' : '#111',
+                      border: `1px solid ${s.count > 0 ? '#1a4d30' : '#1f1f1f'}`,
+                      color: s.count > 0 ? '#10b981' : '#333',
+                    }}>
+                      {s.count > 0 ? '✓ ' : ''}{s.name}{s.count > 0 ? ` ${s.count}` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{display:'flex', alignItems:'center', gap:10, padding:'20px 0'}}>
+              <svg className="spin" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="#7c3aed" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
+              <span style={{fontSize:13, color:'#555'}}>Ranking stories…</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -718,6 +804,48 @@ function BriefView({ backendStatus, onDraftThis }) {
           </div>
         </div>
       )}
+
+      {/* Sources panel */}
+      {sources.length > 0 && (
+        <div style={{marginTop:32, borderTop:'1px solid #1a1a1a', paddingTop:20}}>
+          <button
+            onClick={() => setShowSources(v => !v)}
+            style={{background:'none', border:'none', cursor:'pointer', display:'flex',
+              alignItems:'center', gap:6, color:'#444', fontSize:12, padding:0}}>
+            <span style={{fontSize:10, transition:'transform .2s',
+              display:'inline-block', transform: showSources ? 'rotate(90deg)' : 'rotate(0deg)'}}>▶</span>
+            {showSources ? 'Hide' : 'Show'} sources monitored ({sources.length})
+          </button>
+          {showSources && (
+            <div style={{marginTop:14, display:'flex', flexWrap:'wrap', gap:6}}>
+              {[1,2,3,4,5].map(tier => {
+                const tierSources = sources.filter(s => s.tier === tier);
+                if (!tierSources.length) return null;
+                const tierLabels = {1:'Tier 1 · Lab blogs', 2:'Tier 2 · Curated digests',
+                  3:'Tier 3 · Editorial', 4:'Tier 4 · Community', 5:'Tier 5 · Singapore/SEA'};
+                return (
+                  <div key={tier} style={{width:'100%', marginBottom:6}}>
+                    <p style={{fontSize:10, color:'#333', marginBottom:5, textTransform:'uppercase',
+                      letterSpacing:'.06em'}}>{tierLabels[tier]}</p>
+                    <div style={{display:'flex', flexWrap:'wrap', gap:5}}>
+                      {tierSources.map(s => (
+                        <span key={s.name} style={{
+                          fontSize:11, padding:'3px 8px', borderRadius:20,
+                          background: s.count > 0 ? '#0d1f17' : '#111',
+                          border: `1px solid ${s.count > 0 ? '#1a4d30' : '#1f1f1f'}`,
+                          color: s.count > 0 ? '#10b981' : '#333',
+                        }}>
+                          {s.name}{s.count > 0 ? ` · ${s.count}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -725,11 +853,12 @@ function BriefView({ backendStatus, onDraftThis }) {
 /* ─────────────────────────── main app ──────────────────────────── */
 
 function App() {
-  const [topic, setTopic]  = useState('');
-  const [take,  setTake]   = useState('');
-  const [tone,  setTone]   = useState('Skeptical');
-  const [model, setModel]  = useState('gemini-2.5-flash');
-  const [role,  setRole]   = useState('People Manager');
+  const [topic,    setTopic]    = useState('');
+  const [take,     setTake]     = useState('');
+  const [tone,     setTone]     = useState('Skeptical');
+  const [model,    setModel]    = useState('gemini-2.5-flash');
+  const [role,     setRole]     = useState('People Manager');
+  const [postType, setPostType] = useState('opinion');
 
   const [activeTab,    setActiveTab]    = useState('brief');  // brief | write
 
@@ -798,6 +927,7 @@ function App() {
       topic: topic || 'Kimi K2.6 launched with 300 AI sub-agents',
       take:  take  || "most teams aren't ready",
       tone, model, role,
+      post_type: postType,
     });
     const evs = new EventSource(`${BACKEND}/run?${params.toString()}`);
     evsRef.current = evs;
@@ -895,12 +1025,11 @@ function App() {
 
   /* ── Brief → Write handoff ── */
   const handleDraftThis = (pick, type) => {
-    // Pre-fill the write form with the brief card's content
     const topicText = pick.title + (pick.url ? '\n\nSource: ' + pick.url : '');
     setTopic(topicText);
     setTake(pick.angle || '');
+    setPostType(type);
     if (type === 'repost') setTone('Balanced');
-    // Reset pipeline state ready for a new run
     clearTimers();
     if (evsRef.current) { evsRef.current.close(); evsRef.current = null; }
     setAgentStates(initStates());
