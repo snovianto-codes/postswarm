@@ -548,7 +548,7 @@ function BriefCard({ pick, rank, onDraftThis }) {
             style={{fontSize:11, color:'#4a7fa8', textDecoration:'none',
               display:'inline-flex', alignItems:'center', gap:4}}
             onClick={e => e.stopPropagation()}>
-            {new URL(pick.url.startsWith('http') ? pick.url : 'https://'+pick.url).hostname.replace('www.','')}
+            {(() => { try { return new URL(pick.url.startsWith('http') ? pick.url : 'https://'+pick.url).hostname.replace('www.',''); } catch(e) { return pick.url.slice(0,40); } })()}
             <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.4">
               <path d="M2 7L7 2M7 2H4M7 2v3" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -1229,7 +1229,6 @@ function App() {
             </div>
           )}
         </div>
-      </div>
       </div>
     </div>
   );
