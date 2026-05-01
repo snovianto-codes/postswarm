@@ -270,7 +270,47 @@ def run():
 
 # ── Pipeline ──────────────────────────────────────────────────────────
 
+def make_repost(topic, take, tone, model, role):
+    """Fast path for reposts — skips research, calls writer directly."""
+    t0 = time.time()
+    print(f"[{ts()}] [Orchestrator] ▶  REPOST fast path")
+
+    # Show only writer in the UI
+    yield sse({'type': 'agent_visible', 'agent': 'writer'})
+    yield sse({'type': 'agent_status',  'agent': 'writer', 'status': 'RUNNING'})
+    yield sse({'type': 'agent_status',  'agent': 'writer', 'status': 'RUNNING', 'log': 'Writing repost reaction…'})
+
+    try:
+        r = http.post(WRITER_URL,
+                      json={'topic': topic, 'take': take, 'tone': tone,
+                            'research': {}, 'hooks': [], 'insights': [],
+                            'model': model, 'role': role, 'post_type': 'repost'},
+                      timeout=TIMEOUT)
+        r.raise_for_status()
+        writer_resp = r.json()
+        final_post  = writer_resp.get('post', '')
+        model_used  = writer_resp.get('model_used', model)
+        elapsed = int((time.time() - t0) * 1000)
+        yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'DONE', 'elapsed': elapsed})
+        yield sse({'type': 'agent_detail', 'agent': 'writer', 'data': {
+            'word_count': len(final_post.split()),
+            'model_used': model_used,
+        }})
+        print(f"[{ts()}] [Orchestrator] ✅ REPOST DONE — {elapsed}ms — {len(final_post.split())} words")
+    except Exception as e:
+        print(f"[{ts()}] [Orchestrator] ✗ Repost writer FAILED: {e}")
+        yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'FAILED'})
+        final_post = f"[Writer failed]\n\nTopic: {topic}"
+
+    yield sse({'type': 'done', 'post': final_post})
+
+
 def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager', post_type='opinion'):
+
+    # ── REPOST: fast path — skip all research, go straight to writer ──
+    if post_type == 'repost':
+        yield from make_repost(topic, take, tone, model, role)
+        return
 
     # ── 1. Research ─────────────────────────────────────────────────
     print(f"[{ts()}] [Orchestrator] ▶  STAGE 1 — Research Agent")
