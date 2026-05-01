@@ -79,8 +79,8 @@ Each story card shows:
 - **Novelty score** — how different it is from your recent posts
 - **Format badge** — repost (short reaction) or opinion (full post)
 
-**Draft my opinion** → full 7-agent pipeline, 100–160 words, your complete take  
-**Draft repost** → 50–80 word reaction + source link, skips the deep research pipeline
+**Draft my opinion** → full 7-agent pipeline (~25s), 100–160 words, your complete take with research, counter-points, and SEA angle  
+**Draft repost** → writer-only fast path (~5-10s), 50–80 word reaction + source link, no research pipeline
 
 Scroll below the picks to **Browse all stories** — every item fetched, grouped by source tier, with dismiss and repost buttons.
 
@@ -178,10 +178,13 @@ Designed for **local use only**.
 
 | Risk | Status |
 |------|--------|
-| SSRF | ✅ URL validation blocks private IPs, `file://`, cloud metadata endpoints |
-| Input limits | ✅ Topic ≤ 2000 chars, take ≤ 500, role ≤ 100 |
+| SSRF | ✅ DNS-resolved IP validation + redirect checks block private/loopback ranges |
+| Input limits | ✅ Topic ≤ 2000 chars, take ≤ 500, role ≤ 100, items array capped at 200 |
 | Model whitelist | ✅ Only listed Gemini models accepted |
-| CORS | ✅ Worker agents restricted to localhost origins |
+| CORS | ✅ Worker agents restricted to localhost origins only |
+| Error messages | ✅ Generic errors returned to frontend — no internal paths or stack traces |
+| Host binding | ✅ Orchestrator binds `127.0.0.1` — not reachable from LAN |
+| API key | ✅ Environment variable only — never committed to git |
 | Prompt injection | ⚠️ Inputs are delimited — LLMs remain inherently susceptible |
 | Authentication | ❌ None — localhost only |
 | Rate limiting | ❌ None — add before any shared deployment |
