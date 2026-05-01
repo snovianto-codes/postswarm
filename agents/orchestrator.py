@@ -2,10 +2,11 @@
 Serves PostSwarm.html at / and runs the agent pipeline via SSE at /run.
 No CORS needed — frontend and backend share the same origin.
 """
-import os, json, time, re, queue, threading
+import os, json, time, re, queue, threading, sqlite3
 from pathlib import Path
+from datetime import date
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, Response, stream_with_context, send_file, abort
+from flask import Flask, request, Response, stream_with_context, send_file, abort, jsonify
 import requests as http
 from dotenv import load_dotenv
 
@@ -16,10 +17,13 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 app = Flask(__name__)
 
 HTML_PATH       = Path(__file__).parent.parent / 'PostSwarm.html'
+DATA_DIR        = Path(__file__).parent.parent / 'data'
 RESEARCH_URL    = 'http://localhost:5001/run'
 PERSPECTIVE_URL = 'http://localhost:5005/run'
 HOOK_URL        = 'http://localhost:5006/run'
 WRITER_URL      = 'http://localhost:5007/run'
+FEED_URL        = 'http://localhost:5008'
+EDITOR_URL      = 'http://localhost:5009/rank'
 TIMEOUT         = 60
 
 ALLOWED_MODELS = {
@@ -37,6 +41,8 @@ AGENT_PORTS = {
     'hook':        5006,
     'writer':      5007,
     'research':    5001,
+    'feed':        5008,
+    'editor':      5009,
 }
 
 
@@ -77,6 +83,111 @@ def health():
     print(f"[{ts()}] [Orchestrator] /health → {'ALL OK' if all_ok else 'PARTIAL'} | {agent_status}")
     return {'status': 'ok', 'agents': agent_status, 'all_ready': all_ok}
 
+
+# ── Digest (Today's Brief) ────────────────────────────────────────────
+
+def _recent_posted_titles():
+    """Return titles already posted, for editor dedup."""
+    db_path = DATA_DIR / 'seen.db'
+    if not db_path.exists():
+        return []
+    try:
+        c = sqlite3.connect(str(db_path))
+        rows = c.execute(
+            "SELECT title FROM seen WHERE posted=1 ORDER BY ts DESC LIMIT 20"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def _run_digest():
+    DATA_DIR.mkdir(exist_ok=True)
+    # 1. Fetch items from feed agent
+    r1 = http.get(f'{FEED_URL}/fetch', timeout=45)
+    r1.raise_for_status()
+    items = r1.json().get('items', [])
+    if not items:
+        return {'picks': [], 'refreshed_at': int(time.time()), 'items_scanned': 0}
+
+    # 2. Rank with editor agent
+    r2 = http.post(EDITOR_URL, json={
+        'items': items,
+        'role': 'People Manager',
+        'recent_posted': _recent_posted_titles(),
+        'model': 'gemini-2.5-flash',
+    }, timeout=90)
+    r2.raise_for_status()
+    picks = r2.json().get('picks', [])
+
+    result = {
+        'picks': picks,
+        'refreshed_at': int(time.time()),
+        'items_scanned': len(items),
+    }
+
+    # 3. Cache for the day
+    cache_file = DATA_DIR / f'digest_{date.today()}.json'
+    cache_file.write_text(json.dumps(result))
+    print(f"[{ts()}] [Orchestrator] /digest ✓ {len(picks)} picks from {len(items)} items")
+    return result
+
+
+@app.route('/digest')
+def digest():
+    cache_file = DATA_DIR / f'digest_{date.today()}.json'
+    if cache_file.exists():
+        data = json.loads(cache_file.read_text())
+        data['cached'] = True
+        return jsonify(data)
+    try:
+        return jsonify(_run_digest())
+    except Exception as e:
+        print(f"[{ts()}] [Orchestrator] /digest ERROR: {e}")
+        return jsonify(picks=[], error=str(e), items_scanned=0), 500
+
+
+@app.route('/digest/refresh', methods=['POST'])
+def digest_refresh():
+    # Delete today's cache and force a fresh run
+    cache_file = DATA_DIR / f'digest_{date.today()}.json'
+    if cache_file.exists():
+        cache_file.unlink()
+    try:
+        return jsonify(_run_digest())
+    except Exception as e:
+        print(f"[{ts()}] [Orchestrator] /digest/refresh ERROR: {e}")
+        return jsonify(picks=[], error=str(e)), 500
+
+
+@app.route('/feed/dismiss', methods=['POST'])
+def feed_dismiss():
+    try:
+        r = http.post(f'{FEED_URL}/dismiss', json=request.json or {}, timeout=5)
+        return jsonify(r.json())
+    except Exception:
+        return jsonify(ok=False)
+
+
+@app.route('/feed/mark_posted', methods=['POST'])
+def feed_mark_posted():
+    try:
+        r = http.post(f'{FEED_URL}/mark_posted', json=request.json or {}, timeout=5)
+        return jsonify(r.json())
+    except Exception:
+        return jsonify(ok=False)
+
+
+@app.route('/feed/inspiration', methods=['POST'])
+def feed_inspiration():
+    try:
+        r = http.post(f'{FEED_URL}/inspiration', json=request.json or {}, timeout=5)
+        return jsonify(r.json())
+    except Exception:
+        return jsonify(ok=False)
+
+
+# ── Write pipeline ────────────────────────────────────────────────────
 
 @app.route('/run')
 def run():

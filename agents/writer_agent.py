@@ -91,17 +91,32 @@ SEA/team insights (weave in naturally):
 3. The author's real take, supported by 1-2 specific data points
 4. 1 honest counter-point or friction (balanced view)
 5. 1 Southeast Asia / team management angle
-6. Sharp closing question (direct, invites real answers)
-7. 4 relevant hashtags on the last line
+6. Closing line — pick what fits, do NOT default to a question every time:
+   - Flat statement (works most of the time)
+   - One-line observation
+   - Question (only if the post genuinely invites debate)
+   - Trailing thought that lingers
+   Vary it across posts. Ending with a question every single time is an AI tell.
+7. Hashtags: 0 to 4, your judgment. Sometimes none is cleaner.
 
 ## Hard rules
-- Max 200 words total (count carefully)
-- Short sentences throughout. No padding.
-- No "In conclusion", "It's worth noting", "Game-changing", "Revolutionary", "Dive into", "Delve", "Groundbreaking"
+- Max 200 words. Aim for 100-160.
+- Vary sentence length. Some short. Some with a dependent clause or two. Never the same rhythm twice.
+- Plain English. Always choose the simpler word.
+  → "Use" not "leverage". "Help" not "empower". "Real" not "authentic". "Big" not "significant".
+- BANNED words: leverage, robust, seamless, comprehensive, elegant, profound, unprecedented,
+  paradigm, ecosystem, holistic, journey, unlock, empower, harness, navigate, landscape,
+  game-changing, revolutionary, dive into, delve, groundbreaking, in today's fast-paced world,
+  it's worth noting, needless to say, at the end of the day
+- BANNED structures:
+  → "It's not just X, it's Y" openers
+  → "Here's the thing:" / "Here's what I found:"
+  → Every paragraph starting the same way
+  → Triadic punch lists on every post
+- Arrow lists (→): only when listing 3+ things. Not in every post.
 - No excessive exclamation marks
-- Use → for any lists
 - One blank line between paragraphs
-- Sound like a real senior leader, not a thought leader performing online
+- Sound like a tired but sharp person who has seen things — not a marketer performing for engagement
 
 Return ONLY the post text. No preamble, no explanation."""
 

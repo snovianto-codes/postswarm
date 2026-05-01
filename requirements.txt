@@ -3,3 +3,4 @@ flask-cors
 google-genai
 requests
 python-dotenv
+feedparser
