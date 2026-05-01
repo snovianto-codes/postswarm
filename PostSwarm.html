@@ -499,7 +499,7 @@ function NoveltyDots({ n }) {
 
 function timeSince(ts) {
   const diff = Math.floor((Date.now()/1000) - ts);
-  if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
+  if (diff < 3600)  return `< 1h ago`;
   if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
   return `${Math.floor(diff/86400)}d ago`;
 }
@@ -647,7 +647,7 @@ function AllStoriesPanel({ items, picks, onDraftThis }) {
                 </p>
                 {group.map(item => {
                   const isPick = pickHashes.has(item.hash);
-                  const ago = timeSince(item.ts * 1000);
+                  const ago = timeSince(item.ts);
                   const isT1 = tier === 1;
                   return (
                     <div key={item.hash} style={{
