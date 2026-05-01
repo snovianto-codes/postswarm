@@ -819,38 +819,8 @@ function BriefView({ backendStatus, onDraftThis }) {
 
       {backendStatus === 'online' && (loading || refreshing) && (
         <div style={{padding:'24px 0'}}>
-          {crawlProgress ? (
-            <div style={{background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'20px 22px'}}>
-              {/* Progress bar */}
-              <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:14}}>
-                <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
-                  stroke="#7c3aed" strokeWidth="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
-                <span style={{fontSize:12, color:'#555'}}>
-                  Crawling {crawlProgress.current}/{crawlProgress.total} — <span style={{color:'#888'}}>{crawlProgress.name}</span>
-                </span>
-              </div>
-              <div style={{height:3, background:'#1a1a1a', borderRadius:4, overflow:'hidden', marginBottom:14}}>
-                <div style={{height:'100%', background:'#7c3aed', borderRadius:4,
-                  width: `${(crawlProgress.current/crawlProgress.total)*100}%`,
-                  transition:'width .3s ease'}}/>
-              </div>
-              {/* Source chips — done ones */}
-              {crawlProgress.done.length > 0 && (
-                <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
-                  {crawlProgress.done.map(s => (
-                    <span key={s.name} style={{
-                      fontSize:10, padding:'2px 7px', borderRadius:12,
-                      background: s.count > 0 ? '#0d1f17' : '#111',
-                      border: `1px solid ${s.count > 0 ? '#1a4d30' : '#1f1f1f'}`,
-                      color: s.count > 0 ? '#10b981' : '#333',
-                    }}>
-                      {s.count > 0 ? '✓ ' : ''}{s.name}{s.count > 0 ? ` ${s.count}` : ''}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : crawlProgress?.ranking ? (
+          {crawlProgress?.ranking ? (
+            /* ── Gemini ranking phase ── */
             <div style={{background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'20px 22px'}}>
               <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:8}}>
                 <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -861,7 +831,43 @@ function BriefView({ backendStatus, onDraftThis }) {
                 Scoring by: relevance to your role → SEA angle → novelty vs recent posts → conversation potential
               </p>
             </div>
-          ) : null}
+          ) : crawlProgress?.total ? (
+            /* ── Feed crawl phase ── */
+            <div style={{background:'#0d0d0d', border:'1px solid #1a1a1a', borderRadius:12, padding:'20px 22px'}}>
+              <div style={{display:'flex', alignItems:'center', gap:10, marginBottom:14}}>
+                <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="#7c3aed" strokeWidth="2.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
+                <span style={{fontSize:12, color:'#555'}}>
+                  Crawling {crawlProgress.current}/{crawlProgress.total} — <span style={{color:'#888'}}>{crawlProgress.name}</span>
+                </span>
+              </div>
+              <div style={{height:3, background:'#1a1a1a', borderRadius:4, overflow:'hidden', marginBottom:14}}>
+                <div style={{height:'100%', background:'#7c3aed', borderRadius:4,
+                  width:`${(crawlProgress.current/crawlProgress.total)*100}%`,
+                  transition:'width .3s ease'}}/>
+              </div>
+              {(crawlProgress.done||[]).length > 0 && (
+                <div style={{display:'flex', flexWrap:'wrap', gap:4}}>
+                  {(crawlProgress.done||[]).map(s => (
+                    <span key={s.name} style={{
+                      fontSize:10, padding:'2px 7px', borderRadius:12,
+                      background: s.count > 0 ? '#0d1f17' : '#111',
+                      border:`1px solid ${s.count > 0 ? '#1a4d30' : '#1f1f1f'}`,
+                      color: s.count > 0 ? '#10b981' : '#333',
+                    }}>
+                      {s.count > 0 ? '✓ ' : ''}{s.name}{s.count > 0 ? ` ${s.count}` : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{display:'flex', alignItems:'center', gap:10, padding:'16px 0'}}>
+              <svg className="spin" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="#7c3aed" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" strokeLinecap="round"/></svg>
+              <span style={{fontSize:13, color:'#555'}}>Loading…</span>
+            </div>
+          )}
         </div>
       )}
 
