@@ -511,6 +511,21 @@ function isStale(ts, days = 3) {
   return (Date.now()/1000 - ts) > days * 86400;
 }
 
+// Domains that aggregate/summarise other sources — may not reflect original publication date
+const AGGREGATOR_DOMAINS = new Set([
+  'briefs.co', 'ground.news', 'tldrnewsletter.com', 'therundown.ai',
+  'morningbrew.com', 'alphasignal.ai', 'aitidbits.ai', 'superhuman.ai',
+  'bensbites.beehiiv.com', 'tldr.tech', 'hackernewsletter.com',
+  'mailbrew.com', 'inoreader.com', 'feedly.com', 'flipboard.com',
+]);
+
+function isAggregator(url) {
+  try {
+    const host = new URL(url.startsWith('http') ? url : 'https://'+url).hostname.replace('www.','');
+    return AGGREGATOR_DOMAINS.has(host);
+  } catch(e) { return false; }
+}
+
 function BriefCard({ pick, rank, onDraftThis }) {
   const [dismissed, setDismissed] = useState(false);
   const [posted,    setPosted]    = useState(false);
@@ -548,6 +563,12 @@ function BriefCard({ pick, rank, onDraftThis }) {
                 style={{fontSize:10, fontWeight:600, color:'#b45309',
                   background:'rgba(180,83,9,.1)', border:'1px solid rgba(180,83,9,.3)',
                   borderRadius:4, padding:'2px 7px'}}>⚠ old article</span>
+            )}
+            {isAggregator(pick.url) && (
+              <span title="This URL is a newsletter or aggregator site — the original story may be older. Verify the source before posting."
+                style={{fontSize:10, fontWeight:600, color:'#7c6a1e',
+                  background:'rgba(234,179,8,.07)', border:'1px solid rgba(234,179,8,.2)',
+                  borderRadius:4, padding:'2px 7px'}}>⚠ summary site</span>
             )}
             <span style={{fontSize:10, fontWeight:600, color: formatBadge.color,
               background: formatBadge.bg, border:`1px solid ${formatBadge.border}`,
@@ -685,7 +706,9 @@ function AllStoriesPanel({ items, picks, onDraftThis }) {
                           {item.title}
                         </a>
                         <span style={{fontSize:10, color: isStale(item.ts) ? '#b45309' : isT1 ? '#555' : '#333'}}>
-                          {item.source} · {ago}{isStale(item.ts) ? ' ⚠' : ''}
+                          {item.source} · {ago}
+                          {isStale(item.ts) && <span title="Article older than 3 days"> ⚠</span>}
+                          {isAggregator(item.url) && <span title="Summary/aggregator site — verify original source" style={{color:'#7c6a1e'}}> ∑</span>}
                         </span>
                       </div>
                       <div style={{display:'flex', gap:6, flexShrink:0}}>
