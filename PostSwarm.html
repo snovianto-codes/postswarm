@@ -501,7 +501,14 @@ function timeSince(ts) {
   const diff = Math.floor((Date.now()/1000) - ts);
   if (diff < 3600)  return `< 1h ago`;
   if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-  return `${Math.floor(diff/86400)}d ago`;
+  // Older than 1 day — show actual date so it's obvious
+  const d = new Date(ts * 1000);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[d.getMonth()]} ${d.getDate()}`;
+}
+
+function isStale(ts, days = 3) {
+  return (Date.now()/1000 - ts) > days * 86400;
 }
 
 function BriefCard({ pick, rank, onDraftThis }) {
@@ -535,7 +542,13 @@ function BriefCard({ pick, rank, onDraftThis }) {
             <span style={{fontSize:11, fontWeight:700, color:'#555', fontFamily:'monospace'}}>#{rank}</span>
             <span style={{fontSize:10, fontWeight:600, color:'#555', background:'#161616',
               border:'1px solid #222', borderRadius:4, padding:'2px 7px'}}>{pick.source}</span>
-            <span style={{fontSize:10, color:'#444'}}>{timeSince(pick.ts)}</span>
+            <span style={{fontSize:10, color: isStale(pick.ts) ? '#b45309' : '#444'}}>{timeSince(pick.ts)}</span>
+            {isStale(pick.ts) && (
+              <span title="Original article is more than 3 days old — may not be breaking news"
+                style={{fontSize:10, fontWeight:600, color:'#b45309',
+                  background:'rgba(180,83,9,.1)', border:'1px solid rgba(180,83,9,.3)',
+                  borderRadius:4, padding:'2px 7px'}}>⚠ old article</span>
+            )}
             <span style={{fontSize:10, fontWeight:600, color: formatBadge.color,
               background: formatBadge.bg, border:`1px solid ${formatBadge.border}`,
               borderRadius:4, padding:'2px 7px'}}>{formatBadge.label}</span>
@@ -671,7 +684,9 @@ function AllStoriesPanel({ items, picks, onDraftThis }) {
                           onMouseLeave={e=>e.target.style.color=isPick?'#d4f5d4':isT1?'#ccc':'#888'}>
                           {item.title}
                         </a>
-                        <span style={{fontSize:10, color: isT1 ? '#555' : '#333'}}>{item.source} · {ago}</span>
+                        <span style={{fontSize:10, color: isStale(item.ts) ? '#b45309' : isT1 ? '#555' : '#333'}}>
+                          {item.source} · {ago}{isStale(item.ts) ? ' ⚠' : ''}
+                        </span>
                       </div>
                       <div style={{display:'flex', gap:6, flexShrink:0}}>
                         <button onClick={() => onDraftThis(item, 'repost')}
