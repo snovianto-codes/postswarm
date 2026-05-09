@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 
 URL_RE = re.compile(r'https?://\S+', re.I)
 
+_digest_lock = threading.Lock()
+
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 app = Flask(__name__)
@@ -97,7 +99,8 @@ def _recent_posted_titles():
             "SELECT title FROM seen WHERE posted=1 ORDER BY ts DESC LIMIT 20"
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as e:
+        print(f"[Orchestrator] WARN: could not read recent posted titles: {e}")
         return []
 
 
@@ -157,14 +160,15 @@ def digest():
 
 @app.route('/digest/refresh', methods=['POST'])
 def digest_refresh():
-    cache_file = DATA_DIR / f'digest_{date.today()}.json'
-    if cache_file.exists():
-        cache_file.unlink()
-    try:
-        return jsonify(_run_digest())
-    except Exception as e:
-        print(f"[{ts()}] [Orchestrator] /digest/refresh ERROR: {e}")
-        return jsonify(picks=[], error='Internal error'), 500
+    with _digest_lock:
+        cache_file = DATA_DIR / f'digest_{date.today()}.json'
+        if cache_file.exists():
+            cache_file.unlink()
+        try:
+            return jsonify(_run_digest())
+        except Exception as e:
+            print(f"[{ts()}] [Orchestrator] /digest/refresh ERROR: {e}")
+            return jsonify(picks=[], error='Internal error'), 500
 
 
 @app.route('/digest/rank', methods=['POST'])
@@ -173,14 +177,15 @@ def digest_rank():
     Avoids double-crawling when the frontend already streamed the feed."""
     data  = request.json or {}
     items = (data.get('items', []) or [])[:200]  # cap to prevent oversized Gemini prompts
-    cache_file = DATA_DIR / f'digest_{date.today()}.json'
-    if cache_file.exists():
-        cache_file.unlink()
-    try:
-        return jsonify(_run_digest(pre_fetched_items=items))
-    except Exception as e:
-        print(f"[{ts()}] [Orchestrator] /digest/rank ERROR: {e}")
-        return jsonify(picks=[], error='Internal error'), 500
+    with _digest_lock:
+        cache_file = DATA_DIR / f'digest_{date.today()}.json'
+        if cache_file.exists():
+            cache_file.unlink()
+        try:
+            return jsonify(_run_digest(pre_fetched_items=items))
+        except Exception as e:
+            print(f"[{ts()}] [Orchestrator] /digest/rank ERROR: {e}")
+            return jsonify(picks=[], error='Internal error'), 500
 
 
 @app.route('/feed/dismiss', methods=['POST'])
@@ -306,6 +311,7 @@ def make_repost(topic, take, tone, model, role):
 
 
 def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager', post_type='opinion'):
+    t0 = time.time()
 
     # ── REPOST: fast path — skip all research, go straight to writer ──
     if post_type == 'repost':
@@ -365,7 +371,6 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
     FACT_LOGS  = ['Received data points…', 'Cross-referencing claims…', 'Verifying stats…']
     DEVIL_LOGS = ['Analysing thesis…', 'Stress-testing assumptions…', 'Building counter-case…']
     tick = 0
-    t0 = time.time()
 
     while True:
         try:

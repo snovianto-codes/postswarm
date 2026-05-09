@@ -107,13 +107,14 @@ Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascendin
 
             picks_raw = json.loads(text)
 
-            # hydrate with full item data
+            # hydrate with full item data — allowlist AI fields to prevent injection
+            ALLOWED_AI_FIELDS = {'rank', 'index', 'why_matters', 'angle', 'novelty', 'format', 'excerpt'}
             picks = []
             for p in picks_raw:
                 idx = p.get('index', -1)
                 if isinstance(idx, int) and 0 <= idx < len(items):
-                    merged = {**items[idx], **p}
-                    picks.append(merged)
+                    safe_p = {k: p[k] for k in ALLOWED_AI_FIELDS if k in p}
+                    picks.append({**items[idx], **safe_p})
 
             print(f"[Editor Agent] ✓ Selected {len(picks)} picks via {model_name}")
             return jsonify(picks=picks)

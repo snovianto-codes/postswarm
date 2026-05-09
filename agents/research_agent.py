@@ -45,7 +45,11 @@ def run():
     topic = data.get('topic', '')
     take  = data.get('take', '')
     tone  = data.get('tone', '')
-    model = data.get('model', 'gemini-2.5-flash')
+    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
+    DEFAULT_MODEL = 'gemini-2.5-flash'
+    model = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
     role  = data.get('role', 'People Manager')
     print(f"[Research Agent] ← Received | Orchestrating research for: {topic[:60]}...")
 

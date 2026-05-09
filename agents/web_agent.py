@@ -45,10 +45,10 @@ class _Stripper(HTMLParser):
             self._article += 1
 
     def handle_endtag(self, tag):
-        if tag in self.SKIP and self._skip:
-            self._skip -= 1
-        if tag in self.ARTICLE and self._article:
-            self._article -= 1
+        if tag in self.SKIP:
+            self._skip = max(0, self._skip - 1)
+        if tag in self.ARTICLE:
+            self._article = max(0, self._article - 1)
 
     def handle_data(self, data):
         if self._skip:

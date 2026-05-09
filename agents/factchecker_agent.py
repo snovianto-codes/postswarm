@@ -26,7 +26,10 @@ def run():
     data = request.json or {}
     topic = data.get('topic', '')
     data_points = data.get('data_points', [])
+    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
     model = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
     print(f"[Fact Checker] ← Received | Verifying {len(data_points)} points about: {topic[:50]}...")
 
     if not data_points:

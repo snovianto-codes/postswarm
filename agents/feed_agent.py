@@ -2,7 +2,7 @@
 Pulls AI news from 19 RSS sources. Dedupes via SQLite.
 Also handles /inspiration endpoint for bookmarklet captures.
 """
-import os, json, time, hashlib, sqlite3, re, traceback
+import os, json, time, hashlib, sqlite3, re, socket, traceback
 from pathlib import Path
 from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
@@ -14,7 +14,6 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
     "http://localhost:8080", "http://127.0.0.1:8080",
-    "http://localhost:5009", "http://127.0.0.1:5009",
 ]}})
 
 DATA_DIR       = Path(__file__).parent.parent / 'data'
@@ -91,7 +90,12 @@ def _fetch_source(tier, source, url):
     cutoff = time.time() - TIER_AGE_HOURS.get(tier, 36) * 3600
     items = []
     try:
-        feed = feedparser.parse(url)
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(10)
+        try:
+            feed = feedparser.parse(url)
+        finally:
+            socket.setdefaulttimeout(old_timeout)
         count = 0
         for e in feed.entries:
             if count >= PER_SOURCE_CAP:
@@ -141,21 +145,24 @@ def fetch_all():
 
 def _dedupe(items):
     c = _db()
-    fresh = []
-    for i in items:
-        row = c.execute(
-            "SELECT dismissed, posted FROM seen WHERE hash=?", (i['hash'],)
-        ).fetchone()
-        if row and (row[0] or row[1]):
-            continue  # skip dismissed or already-posted stories
-        c.execute(
-            """INSERT OR IGNORE INTO seen(hash,title,url,source,summary,ts,tier)
-               VALUES(?,?,?,?,?,?,?)""",
-            (i['hash'], i['title'], i['url'], i['source'], i['summary'], i['ts'], i['tier']),
-        )
-        fresh.append(i)
-    c.commit()
-    return fresh
+    try:
+        fresh = []
+        for i in items:
+            row = c.execute(
+                "SELECT dismissed, posted FROM seen WHERE hash=?", (i['hash'],)
+            ).fetchone()
+            if row and (row[0] or row[1]):
+                continue  # skip dismissed or already-posted stories
+            c.execute(
+                """INSERT OR IGNORE INTO seen(hash,title,url,source,summary,ts,tier)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (i['hash'], i['title'], i['url'], i['source'], i['summary'], i['ts'], i['tier']),
+            )
+            fresh.append(i)
+        c.commit()
+        return fresh
+    finally:
+        c.close()
 
 
 # ── Routes ─────────────────────────────────────────────────────────────
@@ -201,11 +208,15 @@ def fetch_stream():
 def dismiss():
     data = request.json or {}
     h = data.get('hash', '')
-    if h:
-        c = _db()
+    if not h or not re.fullmatch(r'[0-9a-f]{40}', h):
+        return jsonify(ok=False), 400
+    c = _db()
+    try:
         c.execute("UPDATE seen SET dismissed=1 WHERE hash=?", (h,))
         c.commit()
         print(f"[Feed Agent] Dismissed: {h[:8]}…")
+    finally:
+        c.close()
     return jsonify(ok=True)
 
 
@@ -213,11 +224,15 @@ def dismiss():
 def mark_posted():
     data = request.json or {}
     h = data.get('hash', '')
-    if h:
-        c = _db()
+    if not h or not re.fullmatch(r'[0-9a-f]{40}', h):
+        return jsonify(ok=False), 400
+    c = _db()
+    try:
         c.execute("UPDATE seen SET posted=1 WHERE hash=?", (h,))
         c.commit()
         print(f"[Feed Agent] Marked posted: {h[:8]}…")
+    finally:
+        c.close()
     return jsonify(ok=True)
 
 
@@ -225,23 +240,29 @@ def mark_posted():
 def save_inspiration():
     data = request.json or {}
     c = _db()
-    c.execute(
-        "INSERT INTO inspiration(url,title,body,saved_at) VALUES(?,?,?,?)",
-        (data.get('url', '')[:500], data.get('title', '')[:200], data.get('body', '')[:2000], int(time.time())),
-    )
-    c.commit()
-    print(f"[Feed Agent] Saved inspiration: {data.get('title', '')[:60]}")
+    try:
+        c.execute(
+            "INSERT INTO inspiration(url,title,body,saved_at) VALUES(?,?,?,?)",
+            (data.get('url', '')[:500], data.get('title', '')[:200], data.get('body', '')[:2000], int(time.time())),
+        )
+        c.commit()
+        print(f"[Feed Agent] Saved inspiration: {data.get('title', '')[:60]}")
+    finally:
+        c.close()
     return jsonify(ok=True)
 
 
 @app.route('/inspiration', methods=['GET'])
 def get_inspirations():
     c = _db()
-    rows = c.execute(
-        "SELECT id,url,title,body,saved_at FROM inspiration ORDER BY saved_at DESC LIMIT 20"
-    ).fetchall()
-    items = [{'id': r[0], 'url': r[1], 'title': r[2], 'body': r[3], 'saved_at': r[4]}
-             for r in rows]
+    try:
+        rows = c.execute(
+            "SELECT id,url,title,body,saved_at FROM inspiration ORDER BY saved_at DESC LIMIT 20"
+        ).fetchall()
+        items = [{'id': r[0], 'url': r[1], 'title': r[2], 'body': r[3], 'saved_at': r[4]}
+                 for r in rows]
+    finally:
+        c.close()
     return jsonify(items=items)
 
 
@@ -249,14 +270,17 @@ def get_inspirations():
 def sources():
     """Returns all configured sources and how many items each has in the DB."""
     c = _db()
-    rows = c.execute(
-        "SELECT source, COUNT(*) FROM seen GROUP BY source"
-    ).fetchall()
-    counts = {r[0]: r[1] for r in rows}
-    result = [
-        {'tier': tier, 'name': name, 'count': counts.get(name, 0)}
-        for tier, name, _ in SOURCES
-    ]
+    try:
+        rows = c.execute(
+            "SELECT source, COUNT(*) FROM seen GROUP BY source"
+        ).fetchall()
+        counts = {r[0]: r[1] for r in rows}
+        result = [
+            {'tier': tier, 'name': name, 'count': counts.get(name, 0)}
+            for tier, name, _ in SOURCES
+        ]
+    finally:
+        c.close()
     return jsonify(sources=result)
 
 
@@ -264,10 +288,14 @@ def sources():
 def recent_posted():
     """Returns titles of stories the user has already posted about — used by editor for dedup."""
     c = _db()
-    rows = c.execute(
-        "SELECT title FROM seen WHERE posted=1 ORDER BY ts DESC LIMIT 20"
-    ).fetchall()
-    return jsonify(titles=[r[0] for r in rows])
+    try:
+        rows = c.execute(
+            "SELECT title FROM seen WHERE posted=1 ORDER BY ts DESC LIMIT 20"
+        ).fetchall()
+        titles = [r[0] for r in rows]
+    finally:
+        c.close()
+    return jsonify(titles=titles)
 
 
 if __name__ == '__main__':

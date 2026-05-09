@@ -26,7 +26,10 @@ def run():
     data = request.json or {}
     topic    = data.get('topic', '')
     research = data.get('research', {})
+    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
     model    = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
     role     = data.get('role', 'People Manager')
     print(f"[Perspective Agent] ← Received | Analyzing for SEA context ({role}): {topic[:50]}...")
 

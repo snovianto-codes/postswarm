@@ -220,6 +220,13 @@ What's your team actually doing to prepare for agentic AI?
 
 /* ─────────────────────────── helpers ───────────────────────────── */
 
+function safeHref(url) {
+  if (!url) return '#';
+  const u = (url || '').trim().toLowerCase();
+  if (u.startsWith('javascript:') || u.startsWith('data:')) return '#';
+  return url;
+}
+
 const initStates = () => Object.fromEntries(
   AGENT_DEFS.map(a => [a.id, { status:'IDLE', logs:[], elapsed:0, startTime:0, detail:null }])
 );
@@ -578,7 +585,7 @@ function BriefCard({ pick, rank, onDraftThis }) {
           <h3 style={{fontSize:14, fontWeight:600, color:'#e0e0e0', lineHeight:1.4, marginBottom:6}}>
             {pick.title}
           </h3>
-          <a href={pick.url} target="_blank" rel="noopener noreferrer"
+          <a href={safeHref(pick.url)} target="_blank" rel="noopener noreferrer"
             style={{fontSize:11, color:'#4a7fa8', textDecoration:'none',
               display:'inline-flex', alignItems:'center', gap:4}}
             onClick={e => e.stopPropagation()}>
@@ -694,7 +701,7 @@ function AllStoriesPanel({ items, picks, onDraftThis }) {
                       {isPick && <span style={{fontSize:9, color:'#10b981', fontWeight:700,
                         flexShrink:0, marginTop:3}}>★</span>}
                       <div style={{flex:1, minWidth:0}}>
-                        <a href={item.url} target="_blank" rel="noopener noreferrer"
+                        <a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer"
                           style={{
                             fontSize: isT1 ? 13 : 12,
                             fontWeight: isT1 ? 500 : 400,

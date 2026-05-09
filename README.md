@@ -149,6 +149,8 @@ postswarm/
 │   ├── perspective_agent.py      # Port 5005
 │   ├── hook_agent.py             # Port 5006
 │   └── writer_agent.py           # Port 5007
+├── hermes/                       # Standalone scripts for Hermes AI agent integration
+│   └── prefetch.py               # Pre-fetches and ranks articles; run via Hermes or cron before opening PostSwarm
 ├── PostSwarm.html                # Single-file React frontend (no build step)
 ├── VOICE.md                      # Writing persona — edit this
 ├── bookmarklet.js                # LinkedIn bookmarklet (readable source)
@@ -180,11 +182,16 @@ Designed for **local use only**.
 |------|--------|
 | SSRF | ✅ DNS-resolved IP validation + redirect checks block private/loopback ranges |
 | Input limits | ✅ Topic ≤ 2000 chars, take ≤ 500, role ≤ 100, items array capped at 200 |
-| Model whitelist | ✅ Only listed Gemini models accepted |
-| CORS | ✅ Worker agents restricted to localhost origins only |
+| Model whitelist | ✅ Only listed Gemini models accepted — enforced in orchestrator and all sub-agents |
+| CORS | ✅ Worker agents restricted to localhost origins only; unused origins removed |
 | Error messages | ✅ Generic errors returned to frontend — no internal paths or stack traces |
 | Host binding | ✅ Orchestrator binds `127.0.0.1` — not reachable from LAN |
 | API key | ✅ Environment variable only — never committed to git |
+| XSS (href) | ✅ `safeHref()` blocks `javascript:` and `data:` URL schemes in feed links |
+| Hash validation | ✅ `/dismiss` and `/mark_posted` validate SHA-1 hex format before DB writes |
+| AI field allowlist | ✅ Only whitelisted fields from AI responses merged into article objects |
+| Feedparser timeout | ✅ 10-second socket timeout applied to all RSS fetch calls |
+| DB connections | ✅ All SQLite connections closed in try/finally blocks |
 | Prompt injection | ⚠️ Inputs are delimited — LLMs remain inherently susceptible |
 | Authentication | ❌ None — localhost only |
 | Rate limiting | ❌ None — add before any shared deployment |

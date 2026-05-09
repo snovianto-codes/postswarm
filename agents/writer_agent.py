@@ -39,7 +39,11 @@ def run():
     research  = data.get('research', {})
     hooks     = data.get('hooks', [])
     insights  = data.get('insights', [])
-    model     = data.get('model', FALLBACK_MODEL)
+    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
+    DEFAULT_MODEL = FALLBACK_MODEL
+    model     = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
     role      = data.get('role', 'People Manager')
     post_type = data.get('post_type', 'opinion')  # 'opinion' or 'repost'
     primary_model = model
