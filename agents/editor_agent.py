@@ -8,8 +8,13 @@ from flask_cors import CORS
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-_client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(_ENV_PATH)
+
+def _get_client():
+    """Create a fresh Gemini client, re-reading .env so key changes take effect without restart."""
+    load_dotenv(_ENV_PATH, override=True)
+    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
@@ -94,9 +99,10 @@ Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascendin
     seen_m = set()
     model_sequence = [m for m in fallback_models if not (m in seen_m or seen_m.add(m))]
 
+    client = _get_client()
     for model_name in model_sequence:
         try:
-            response = _client.models.generate_content(model=model_name, contents=prompt)
+            response = client.models.generate_content(model=model_name, contents=prompt)
             text = response.text.strip()
             # strip markdown fences if model adds them
             if text.startswith('```'):
