@@ -151,10 +151,11 @@ const { useState, useEffect, useRef, useCallback } = React;
 const BACKEND = '';
 
 const MODELS = [
-  { id: 'gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        desc: 'Highest quality · best reasoning · slower' },
-  { id: 'gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      desc: 'Balanced · fast · recommended' },
-  { id: 'gemini-2.0-flash',      label: 'Gemini 2.0 Flash',      desc: 'Faster · lower cost' },
-  { id: 'gemini-1.5-flash',      label: 'Gemini 1.5 Flash',      desc: 'Basic · fastest · cheapest' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro',        desc: 'Best available · latest generation · slower' },
+  { id: 'gemini-2.5-pro',         label: 'Gemini 2.5 Pro',        desc: 'High quality · strong reasoning' },
+  { id: 'gemini-2.5-flash',       label: 'Gemini 2.5 Flash',      desc: 'Balanced · fast · recommended' },
+  { id: 'gemini-2.0-flash',       label: 'Gemini 2.0 Flash',      desc: 'Faster · lower cost' },
+  { id: 'gemini-1.5-flash',       label: 'Gemini 1.5 Flash',      desc: 'Basic · fastest · cheapest' },
 ];
 
 const ROLE_PRESETS = [
@@ -354,11 +355,12 @@ function AgentCard({ agent, state, isFirst, prevDone }) {
   );
 }
 
-function OutputPanel({ post, totalMs, onRegenerate }) {
+function OutputPanel({ post, totalMs, onRegenerate, modelFallback }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard.writeText(post).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000); });
   };
+  const modelLabel = id => MODELS.find(m => m.id === id)?.label || id;
   return (
     <div className="output-panel rounded-2xl border border-[#1f1f1f] bg-[#111] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1a1a1a]">
@@ -370,6 +372,17 @@ function OutputPanel({ post, totalMs, onRegenerate }) {
           7 agents · {(totalMs/1000).toFixed(1)}s
         </span>
       </div>
+      {modelFallback && (
+        <div style={{display:'flex', alignItems:'center', gap:8, padding:'8px 20px',
+          background:'rgba(180,83,9,.08)', borderBottom:'1px solid rgba(180,83,9,.2)'}}>
+          <span style={{fontSize:13}}>⚠️</span>
+          <span style={{fontSize:12, color:'#d97706', lineHeight:1.5}}>
+            <strong style={{color:'#f59e0b'}}>{modelLabel(modelFallback.requested)}</strong> quota exceeded — wrote with{' '}
+            <strong style={{color:'#f59e0b'}}>{modelLabel(modelFallback.used)}</strong> instead.{' '}
+            <span style={{color:'#92680a'}}>Enable billing on Google AI to use Pro.</span>
+          </span>
+        </div>
+      )}
       <div className="px-5 py-5">
         <pre className="text-[13.5px] leading-[1.78] text-[#c8c8c8] whitespace-pre-wrap font-sans">{post}</pre>
       </div>
@@ -1023,6 +1036,7 @@ function App() {
   const [visibleAgents,setVisibleAgents]= useState([]);
   const [finalPost,    setFinalPost]    = useState('');
   const [totalMs,      setTotalMs]      = useState(0);
+  const [modelFallback,setModelFallback]= useState(null);     // null | {requested, used}
   const [mode,         setMode]         = useState(null);     // null | 'live' | 'demo'
   const [backendStatus,setBackendStatus]= useState('checking'); // checking | online | offline
   const [toast,        setToast]        = useState(null);      // null | {msg, color}
@@ -1117,6 +1131,11 @@ function App() {
       if (msg.type === 'done') {
         setFinalPost(msg.post || '');
         setTotalMs(Date.now() - t0Ref.current);
+        if (msg.model_requested && msg.model_used && msg.model_used !== msg.model_requested && msg.model_used !== 'fallback') {
+          setModelFallback({ requested: msg.model_requested, used: msg.model_used });
+          setToast({ msg: `⚠ ${MODELS.find(m=>m.id===msg.model_requested)?.label||msg.model_requested} quota exceeded — used ${MODELS.find(m=>m.id===msg.model_used)?.label||msg.model_used} instead`, color: '#f59e0b' });
+          setTimeout(() => setToast(null), 6000);
+        }
         setPhase('done');
         evs.close();
       }
@@ -1202,6 +1221,7 @@ function App() {
     setAgentStates(initStates());
     setVisibleAgents([]);
     setFinalPost('');
+    setModelFallback(null);
 
     if (backendStatus === 'online') {
       runLive();
@@ -1530,7 +1550,7 @@ function App() {
           {/* output panel */}
           {phase==='done' && finalPost && (
             <div style={{padding:'20px 24px', borderTop:'1px solid #141414'}}>
-              <OutputPanel post={finalPost} totalMs={totalMs} onRegenerate={handleRegenerate}/>
+              <OutputPanel post={finalPost} totalMs={totalMs} onRegenerate={handleRegenerate} modelFallback={modelFallback}/>
             </div>
           )}
         </div>

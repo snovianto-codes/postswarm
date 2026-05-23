@@ -7,8 +7,12 @@ from flask_cors import CORS
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-_client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(_ENV_PATH)
+
+def _get_client():
+    load_dotenv(_ENV_PATH, override=True)
+    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
@@ -26,7 +30,7 @@ def run():
     data = request.json or {}
     topic = data.get('topic', '')
     data_points = data.get('data_points', [])
-    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
     model = data.get('model', DEFAULT_MODEL)
     if model not in ALLOWED_MODELS:
         model = DEFAULT_MODEL
@@ -62,7 +66,7 @@ Rules:
 - Return ONLY the JSON object, no other text"""
 
     try:
-        response = _client.models.generate_content(model=model, contents=prompt)
+        response = _get_client().models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]

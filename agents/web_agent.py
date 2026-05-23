@@ -11,8 +11,12 @@ from flask_cors import CORS
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-_client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(_ENV_PATH)
+
+def _get_client():
+    load_dotenv(_ENV_PATH, override=True)
+    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
@@ -178,7 +182,7 @@ Return as a JSON array of strings. Example:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _client.models.generate_content(model=model, contents=prompt)
+        response = _get_client().models.generate_content(model=model, contents=prompt)
         text = response.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]

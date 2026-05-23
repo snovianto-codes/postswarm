@@ -29,7 +29,7 @@ EDITOR_URL      = 'http://localhost:5009/rank'
 TIMEOUT         = 60
 
 ALLOWED_MODELS = {
-    'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash',
+    'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash',
 }
 MAX_TOPIC_LEN = 2000
 MAX_TAKE_LEN  = 500
@@ -285,6 +285,8 @@ def make_repost(topic, take, tone, model, role):
     yield sse({'type': 'agent_status',  'agent': 'writer', 'status': 'RUNNING'})
     yield sse({'type': 'agent_status',  'agent': 'writer', 'status': 'RUNNING', 'log': 'Writing repost reaction…'})
 
+    final_post = ''
+    model_used = model
     try:
         r = http.post(WRITER_URL,
                       json={'topic': topic, 'take': take, 'tone': tone,
@@ -307,7 +309,7 @@ def make_repost(topic, take, tone, model, role):
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'FAILED'})
         final_post = f"[Writer failed]\n\nTopic: {topic}"
 
-    yield sse({'type': 'done', 'post': final_post})
+    yield sse({'type': 'done', 'post': final_post, 'model_used': model_used, 'model_requested': model})
 
 
 def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Manager', post_type='opinion'):
@@ -476,6 +478,7 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
     yield sse({'type': 'agent_status',  'agent': 'writer', 'status': 'RUNNING', 'log': 'Drafting post…'})
 
     final_post = ''
+    model_used = model
     t2 = time.time()
     try:
         print(f"[{ts()}] [Orchestrator]    → POST {WRITER_URL}")
@@ -504,7 +507,7 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
     total = int((time.time() - t0) * 1000)
     print(f"\n[{ts()}] [Orchestrator] ✅ PIPELINE COMPLETE — {total/1000:.1f}s total")
     print(f"\n{'═'*60}\nFINAL POST:\n{'─'*60}\n{final_post}\n{'═'*60}\n")
-    yield sse({'type': 'done', 'post': final_post})
+    yield sse({'type': 'done', 'post': final_post, 'model_used': model_used, 'model_requested': model})
 
 
 if __name__ == '__main__':
