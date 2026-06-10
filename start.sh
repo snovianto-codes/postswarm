@@ -2,6 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# Keep the API key file readable by owner only
+if [ -f .env ]; then chmod 600 .env; fi
+
 echo "📦 Installing dependencies..."
 pip install -r requirements.txt -q
 

@@ -45,7 +45,7 @@ def run():
     topic = data.get('topic', '')
     take  = data.get('take', '')
     tone  = data.get('tone', '')
-    ALLOWED_MODELS = {'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
     DEFAULT_MODEL = 'gemini-2.5-flash'
     model = data.get('model', DEFAULT_MODEL)
     if model not in ALLOWED_MODELS:

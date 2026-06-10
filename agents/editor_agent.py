@@ -22,8 +22,9 @@ CORS(app, resources={r"/*": {"origins": [
     "http://localhost:5008", "http://127.0.0.1:5008",
 ]}})
 
-VOICE_PATH    = Path(__file__).parent.parent / 'VOICE.md'
-DEFAULT_MODEL = 'gemini-2.5-flash'
+VOICE_PATH     = Path(__file__).parent.parent / 'VOICE.md'
+DEFAULT_MODEL  = 'gemini-2.5-flash'
+ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
 
 
 def load_voice():
@@ -45,6 +46,8 @@ def rank():
     role          = data.get('role',  'People Manager')
     recent_posted = data.get('recent_posted', [])
     model         = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
 
     if not items:
         return jsonify(picks=[])
@@ -95,7 +98,7 @@ For each of your {count} picks, return:
 
 Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascending. No markdown fences, no preamble."""
 
-    fallback_models = [model, 'gemini-2.5-flash', 'gemini-1.5-flash']
+    fallback_models = [model, 'gemini-2.5-flash']
     seen_m = set()
     model_sequence = [m for m in fallback_models if not (m in seen_m or seen_m.add(m))]
 

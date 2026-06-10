@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, request, Response, stream_with_context, send_file, abort, jsonify
+from flask_cors import CORS
 import requests as http
 from dotenv import load_dotenv
 
@@ -17,6 +18,25 @@ _digest_lock = threading.Lock()
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 app = Flask(__name__)
+
+# Bookmarklet posts from linkedin.com — allow CORS for that one route only.
+CORS(app, resources={r"/feed/inspiration": {"origins": ["https://www.linkedin.com"]}})
+
+ALLOWED_HOSTS = {'localhost:8080', '127.0.0.1:8080'}
+
+
+@app.before_request
+def _block_external_requests():
+    # DNS-rebinding guard: a malicious page pointing its own hostname at
+    # 127.0.0.1 arrives with that hostname in the Host header.
+    if request.host not in ALLOWED_HOSTS:
+        abort(403)
+    # Drive-by guard: block cross-site browser requests (e.g. an <img> on a
+    # random page firing /run and burning Gemini quota). /feed/inspiration is
+    # exempt — the bookmarklet legitimately posts cross-site from linkedin.com.
+    if (request.headers.get('Sec-Fetch-Site') == 'cross-site'
+            and request.path != '/feed/inspiration'):
+        abort(403)
 
 HTML_PATH       = Path(__file__).parent.parent / 'PostSwarm.html'
 DATA_DIR        = Path(__file__).parent.parent / 'data'
@@ -29,7 +49,7 @@ EDITOR_URL      = 'http://localhost:5009/rank'
 TIMEOUT         = 60
 
 ALLOWED_MODELS = {
-    'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash',
+    'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash',
 }
 MAX_TOPIC_LEN = 2000
 MAX_TAKE_LEN  = 500
@@ -510,6 +530,28 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
     yield sse({'type': 'done', 'post': final_post, 'model_used': model_used, 'model_requested': model})
 
 
+def _validate_api_key():
+    """One cheap call on startup to verify the Gemini API key and model work.
+    Uses the smallest available model. Aborts with a clear message if it fails."""
+    try:
+        from google import genai as _genai
+        load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'), override=True)
+        _client = _genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+        _client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents='Reply with the single word: ok'
+        )
+        print("[Orchestrator] ✓ Gemini API key validated")
+    except KeyError:
+        print("[Orchestrator] ✗ GEMINI_API_KEY not set — check your .env file")
+        raise SystemExit(1)
+    except Exception as e:
+        print(f"[Orchestrator] ✗ Gemini API key check failed: {e}")
+        print("[Orchestrator]   → Update GEMINI_API_KEY in .env and restart")
+        raise SystemExit(1)
+
+
 if __name__ == '__main__':
     banner(f"PostSwarm Orchestrator\n  http://localhost:8080  ←  open this in your browser")
+    _validate_api_key()
     app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)
