@@ -30,12 +30,10 @@ def run():
     data = request.json or {}
     topic = data.get('topic', '')
     take  = data.get('take', '')
-    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
-    model = data.get('model', DEFAULT_MODEL)
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_MODEL
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
+    model = DEFAULT_MODEL  # fixed: creative task needs 2.5-flash minimum, not user-selectable
     role  = data.get('role', 'People Manager')
-    print(f"[Hook Agent] ← Received | Writing hooks for: {topic[:50]}...")
+    print(f"[Hook Agent] ← Received | model: {model} | Writing hooks for: {topic[:50]}...")
 
     prompt = f"""You are writing LinkedIn hooks for a {role} based in Singapore.
 

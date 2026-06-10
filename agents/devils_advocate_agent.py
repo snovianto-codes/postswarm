@@ -29,11 +29,9 @@ def health():
 def run():
     data = request.json or {}
     topic = data.get('topic', '')
-    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
-    model = data.get('model', DEFAULT_MODEL)
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_MODEL
-    print(f"[Devil's Advocate] ← Received | Arguing against: {topic[:60]}...")
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
+    model = DEFAULT_MODEL  # fixed: short structured output, no need for smarter model
+    print(f"[Devil's Advocate] ← Received | model: {model} | Arguing against: {topic[:60]}...")
 
     prompt = f"""You are a sharp devil's advocate for a LinkedIn post about: {topic}
 

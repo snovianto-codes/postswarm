@@ -30,12 +30,10 @@ def run():
     data = request.json or {}
     topic    = data.get('topic', '')
     research = data.get('research', {})
-    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'}
-    model    = data.get('model', DEFAULT_MODEL)
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_MODEL
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
+    model    = DEFAULT_MODEL  # fixed: short structured output, context fully provided in prompt
     role     = data.get('role', 'People Manager')
-    print(f"[Perspective Agent] ← Received | Analyzing for SEA context ({role}): {topic[:50]}...")
+    print(f"[Perspective Agent] ← Received | model: {model} | Analyzing for SEA context ({role}): {topic[:50]}...")
 
     verified_points = research.get('verified', [])
     research_summary = '\n'.join(f"- {p}" for p in verified_points[:3]) if verified_points else "No research provided."

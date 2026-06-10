@@ -129,14 +129,14 @@ def health():
 def run():
     data  = request.json or {}
     topic = data.get('topic', '')
-    model = data.get('model', DEFAULT_MODEL)
+    model = DEFAULT_MODEL  # fixed: extraction task, no need for smarter model
 
     urls   = URL_RE.findall(topic)
     article_text = ''
 
     if urls:
         url = urls[0]
-        print(f"[Web Agent] ← URL detected: {url}")
+        print(f"[Web Agent] ← URL detected: {url} | model: {model}")
         print(f"[Web Agent] Fetching article…")
         try:
             article_text = fetch_url(url)
@@ -144,7 +144,7 @@ def run():
         except Exception as e:
             print(f"[Web Agent] [ERROR] Could not fetch URL: {e}")
     else:
-        print(f"[Web Agent] ← Received from Research Agent | Searching: {topic[:60]}...")
+        print(f"[Web Agent] ← Received from Research Agent | model: {model} | Searching: {topic[:60]}...")
 
     # Build the Gemini prompt
     if article_text:
