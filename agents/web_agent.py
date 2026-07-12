@@ -2,26 +2,20 @@
 Called by Research Agent. If topic contains a URL, fetches and reads it first.
 Otherwise generates grounded research points from Gemini.
 """
-import os, re, json, traceback, ipaddress, socket
+import sys, re, json, traceback, ipaddress, socket
 from html.parser import HTMLParser
+from pathlib import Path
 from urllib.parse import urlparse
 import urllib.request
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
-from dotenv import load_dotenv
 
-_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(_ENV_PATH)
-
-def _get_client():
-    load_dotenv(_ENV_PATH, override=True)
-    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.model_client import call_model, ModelClientError
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
 
-DEFAULT_MODEL = 'gemini-2.5-flash'
 URL_RE  = re.compile(r'https?://\S+', re.I)
 MAX_CHARS = 8000
 
@@ -129,14 +123,13 @@ def health():
 def run():
     data  = request.json or {}
     topic = data.get('topic', '')
-    model = DEFAULT_MODEL  # fixed: extraction task, no need for smarter model
 
     urls   = URL_RE.findall(topic)
     article_text = ''
 
     if urls:
         url = urls[0]
-        print(f"[Web Agent] ← URL detected: {url} | model: {model}")
+        print(f"[Web Agent] ← URL detected: {url}")
         print(f"[Web Agent] Fetching article…")
         try:
             article_text = fetch_url(url)
@@ -144,7 +137,7 @@ def run():
         except Exception as e:
             print(f"[Web Agent] [ERROR] Could not fetch URL: {e}")
     else:
-        print(f"[Web Agent] ← Received from Research Agent | model: {model} | Searching: {topic[:60]}...")
+        print(f"[Web Agent] ← Received from Research Agent | Searching: {topic[:60]}...")
 
     # Build the Gemini prompt
     if article_text:
@@ -182,15 +175,15 @@ Return as a JSON array of strings. Example:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _get_client().models.generate_content(model=model, contents=prompt)
-        text = response.text.strip()
+        resp = call_model('web', prompt)
+        text = resp.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]
             if text.startswith('json'):
                 text = text[4:]
         data_points = json.loads(text.strip())
         source = f"from article" if article_text else "from topic"
-        print(f"[Web Agent] ✓ Generated {len(data_points)} research points ({source})")
+        print(f"[Web Agent] ✓ Generated {len(data_points)} research points ({source}) via {resp.provider}/{resp.model}")
         return jsonify(data_points=data_points, source_url=urls[0] if urls else None)
     except Exception as e:
         print(f"[Web Agent] [ERROR] {type(e).__name__}: {e}")
