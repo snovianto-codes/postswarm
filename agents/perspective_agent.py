@@ -1,23 +1,16 @@
 """Perspective Agent — port 5005
 Called by Orchestrator. Generates SEA/business-leader insights.
 """
-import os, json, traceback
+import sys, json, traceback
+from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
-from dotenv import load_dotenv
 
-_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(_ENV_PATH)
-
-def _get_client():
-    load_dotenv(_ENV_PATH, override=True)
-    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.model_client import call_model
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
-
-DEFAULT_MODEL = 'gemini-2.5-flash'
 
 
 @app.route('/health')
@@ -30,10 +23,8 @@ def run():
     data = request.json or {}
     topic    = data.get('topic', '')
     research = data.get('research', {})
-    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
-    model    = DEFAULT_MODEL  # fixed: short structured output, context fully provided in prompt
     role     = data.get('role', 'People Manager')
-    print(f"[Perspective Agent] ← Received | model: {model} | Analyzing for SEA context ({role}): {topic[:50]}...")
+    print(f"[Perspective Agent] ← Received | Analyzing for SEA context ({role}): {topic[:50]}...")
 
     verified_points = research.get('verified', [])
     research_summary = '\n'.join(f"- {p}" for p in verified_points[:3]) if verified_points else "No research provided."
@@ -64,14 +55,14 @@ Return as a JSON array of strings:
 Return ONLY the JSON array, no other text."""
 
     try:
-        response = _get_client().models.generate_content(model=model, contents=prompt)
-        text = response.text.strip()
+        resp = call_model('perspective', prompt)
+        text = resp.text.strip()
         if text.startswith('```'):
             text = text.split('```')[1]
             if text.startswith('json'):
                 text = text[4:]
         insights = json.loads(text.strip())
-        print(f"[Perspective Agent] ✓ Generated {len(insights)} SEA insights")
+        print(f"[Perspective Agent] ✓ Generated {len(insights)} SEA insights via {resp.provider}/{resp.model}")
         return jsonify(insights=insights)
     except Exception as e:
         print(f"[Perspective Agent] [ERROR] {type(e).__name__}: {e}")
