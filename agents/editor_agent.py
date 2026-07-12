@@ -1,20 +1,13 @@
 """Editor Agent — port 5009
 Scores raw feed items → top 5 picks with why_matters, angle, novelty.
 """
-import os, json, traceback
+import os, sys, json, traceback
 from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
-from dotenv import load_dotenv
 
-_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(_ENV_PATH)
-
-def _get_client():
-    """Create a fresh Gemini client, re-reading .env so key changes take effect without restart."""
-    load_dotenv(_ENV_PATH, override=True)
-    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.model_client import call_model
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
@@ -32,6 +25,20 @@ def load_voice():
         return VOICE_PATH.read_text()
     except Exception:
         return "Direct, practical LinkedIn content for a Singapore People Manager in tech."
+
+
+def _rank_once(prompt, request_model):
+    """One call+parse attempt. Raises on API failure (model_client.ModelClientError
+    or the provider's own exception) or on malformed JSON — either way the
+    caller retries once with a different model."""
+    resp = call_model('editor', prompt, request_model=request_model)
+    text = resp.text.strip()
+    if text.startswith('```'):
+        text = text.split('```')[1]
+        if text.startswith('json'):
+            text = text[4:]
+        text = text.rsplit('```', 1)[0].strip()
+    return json.loads(text), resp
 
 
 @app.route('/health')
@@ -98,41 +105,34 @@ For each of your {count} picks, return:
 
 Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascending. No markdown fences, no preamble."""
 
-    fallback_models = [model, 'gemini-2.5-flash']
-    seen_m = set()
-    model_sequence = [m for m in fallback_models if not (m in seen_m or seen_m.add(m))]
+    # Try the requested model, then the default once more if that also
+    # fails (API error or malformed JSON) — skip the redundant second
+    # attempt if the requested model already was the default.
+    model_attempts = [model] if model == DEFAULT_MODEL else [model, DEFAULT_MODEL]
 
-    client = _get_client()
-    for model_name in model_sequence:
+    picks_raw, resp = None, None
+    for attempt_model in model_attempts:
         try:
-            response = client.models.generate_content(model=model_name, contents=prompt)
-            text = response.text.strip()
-            # strip markdown fences if model adds them
-            if text.startswith('```'):
-                text = text.split('```')[1]
-                if text.startswith('json'):
-                    text = text[4:]
-                text = text.rsplit('```', 1)[0].strip()
-
-            picks_raw = json.loads(text)
-
-            # hydrate with full item data — allowlist AI fields to prevent injection
-            ALLOWED_AI_FIELDS = {'rank', 'index', 'why_matters', 'angle', 'novelty', 'format', 'excerpt'}
-            picks = []
-            for p in picks_raw:
-                idx = p.get('index', -1)
-                if isinstance(idx, int) and 0 <= idx < len(items):
-                    safe_p = {k: p[k] for k in ALLOWED_AI_FIELDS if k in p}
-                    picks.append({**items[idx], **safe_p})
-
-            print(f"[Editor Agent] ✓ Selected {len(picks)} picks via {model_name}")
-            return jsonify(picks=picks)
-
+            picks_raw, resp = _rank_once(prompt, attempt_model)
+            break
         except Exception as e:
-            print(f"[Editor Agent] [{model_name}] {type(e).__name__}: {e}")
-            if model_name == model_sequence[-1]:
-                print(traceback.format_exc())
-                return jsonify(picks=[])
+            print(f"[Editor Agent] [{attempt_model}] {type(e).__name__}: {e}")
+
+    if picks_raw is None:
+        print(traceback.format_exc())
+        return jsonify(picks=[])
+
+    # hydrate with full item data — allowlist AI fields to prevent injection
+    ALLOWED_AI_FIELDS = {'rank', 'index', 'why_matters', 'angle', 'novelty', 'format', 'excerpt'}
+    picks = []
+    for p in picks_raw:
+        idx = p.get('index', -1)
+        if isinstance(idx, int) and 0 <= idx < len(items):
+            safe_p = {k: p[k] for k in ALLOWED_AI_FIELDS if k in p}
+            picks.append({**items[idx], **safe_p})
+
+    print(f"[Editor Agent] ✓ Selected {len(picks)} picks via {resp.provider}/{resp.model}")
+    return jsonify(picks=picks)
 
 
 if __name__ == '__main__':
