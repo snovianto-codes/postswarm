@@ -2,7 +2,7 @@
 Serves PostSwarm.html at / and runs the agent pipeline via SSE at /run.
 No CORS needed — frontend and backend share the same origin.
 """
-import os, json, time, re, queue, threading, sqlite3
+import os, sys, json, time, re, queue, threading, sqlite3, argparse
 from pathlib import Path
 from datetime import date
 from concurrent.futures import ThreadPoolExecutor
@@ -142,7 +142,8 @@ def _run_digest(pre_fetched_items=None):
         'items': items,
         'role': 'People Manager',
         'recent_posted': _recent_posted_titles(),
-        'model': 'gemini-2.5-flash',
+        # No 'model' override — Editor Agent resolves its own model from
+        # config/models.yaml (defaults to gemini-2.5-flash, same as before).
     }, timeout=90)
     r2.raise_for_status()
     picks = r2.json().get('picks', [])
@@ -551,7 +552,53 @@ def _validate_api_key():
         raise SystemExit(1)
 
 
+def _dry_run(topic, take, tone, model, role, post_type):
+    """Run the full pipeline synchronously and print what would have been
+    shown in the browser for copy-paste — no Flask server, no browser.
+    Requires the other 8 agent processes to already be running (same as
+    a normal /run call), since the orchestrator only coordinates them."""
+    banner("DRY RUN — pipeline output below, nothing is posted anywhere")
+    for sse_line in make_pipeline(topic, take, tone, model, role, post_type):
+        payload = json.loads(sse_line[len('data: '):].strip())
+        kind = payload.get('type')
+        if kind == 'agent_status' and payload.get('status') in ('DONE', 'FAILED'):
+            elapsed = f" ({payload['elapsed']}ms)" if payload.get('elapsed') is not None else ''
+            print(f"  [{payload['agent']}] {payload['status']}{elapsed}")
+        elif kind == 'agent_detail' and payload.get('data', {}).get('model_used'):
+            print(f"    → model_used: {payload['data']['model_used']}")
+        elif kind == 'error':
+            print(f"  [ERROR] {payload.get('message')}")
+        elif kind == 'done':
+            print(f"\n{'='*60}\nFINAL POST (what would be shown for copy-paste):\n{'-'*60}")
+            print(payload.get('post', ''))
+            print(f"{'='*60}")
+            print(f"model_requested: {payload.get('model_requested')}  "
+                  f"model_used: {payload.get('model_used')}\n")
+
+
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='PostSwarm Orchestrator')
+    parser.add_argument('--dry-run', action='store_true',
+                         help='Run the pipeline once for --topic and print the result instead of starting the server.')
+    parser.add_argument('--topic', default='')
+    parser.add_argument('--take', default='')
+    parser.add_argument('--tone', default='Skeptical')
+    parser.add_argument('--model', default='gemini-2.5-flash')
+    parser.add_argument('--role', default='People Manager')
+    parser.add_argument('--post-type', default='opinion', choices=['opinion', 'repost'])
+    args = parser.parse_args()
+
+    if args.dry_run:
+        if not args.topic:
+            print("[Orchestrator] --dry-run requires --topic")
+            raise SystemExit(1)
+        if args.model not in ALLOWED_MODELS:
+            print(f"[Orchestrator] Unknown model. Allowed: {', '.join(sorted(ALLOWED_MODELS))}")
+            raise SystemExit(1)
+        _validate_api_key()
+        _dry_run(args.topic, args.take, args.tone, args.model, args.role, args.post_type)
+        sys.exit(0)
+
     banner(f"PostSwarm Orchestrator\n  http://localhost:8080  ←  open this in your browser")
     _validate_api_key()
     app.run(host='127.0.0.1', port=8080, debug=False, threaded=True)
