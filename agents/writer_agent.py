@@ -1,19 +1,13 @@
 """Writer Agent — port 5007
 Called by Orchestrator. Assembles the final LinkedIn post using VOICE.md.
 """
-import os, json, traceback
+import os, sys
 from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
-from dotenv import load_dotenv
 
-_ENV_PATH = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(_ENV_PATH)
-
-def _get_client():
-    load_dotenv(_ENV_PATH, override=True)
-    return genai.Client(api_key=os.environ['GEMINI_API_KEY'])
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from core.model_client import call_model, ModelClientError
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
@@ -159,21 +153,15 @@ SEA/team insights (weave in naturally):
 
 Return ONLY the post text. No preamble, no explanation."""
 
-    fallback_models = [m for m in [primary_model, FALLBACK_MODEL] if m]
-    seen = set()
-    model_sequence = [m for m in fallback_models if not (m in seen or seen.add(m))]
+    try:
+        resp = call_model('writer', prompt, request_model=primary_model)
+    except ModelClientError as e:
+        print(f"[Writer Agent] [ERROR] {e}")
+        return jsonify(post='', model_used='fallback')
 
-    for model_name in model_sequence:
-        try:
-            response = _get_client().models.generate_content(model=model_name, contents=prompt)
-            post = response.text.strip()
-            print(f"[Writer Agent] ✓ Post written ({len(post.split())} words) using {model_name}")
-            return jsonify(post=post, model_used=model_name)
-        except Exception as e:
-            print(f"[Writer Agent] [ERROR] {model_name} failed: {type(e).__name__}: {e}")
-            print(traceback.format_exc())
-            if model_name == model_sequence[-1]:
-                return jsonify(post='', model_used='fallback')
+    post = resp.text
+    print(f"[Writer Agent] ✓ Post written ({len(post.split())} words) using {resp.provider}/{resp.model}")
+    return jsonify(post=post, model_used=resp.model)
 
 
 if __name__ == '__main__':

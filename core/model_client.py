@@ -206,6 +206,10 @@ def call_model(role: str, prompt: str, request_model: Optional[str] = None,
     resolved = _resolve(role, request_model)
     provider, model, fallback = resolved['provider'], resolved['model'], resolved['fallback']
 
+    if fallback and fallback.get('provider', DEFAULT_PROVIDER) == provider \
+            and fallback.get('model', DEFAULT_MODEL) == model:
+        fallback = None  # identical to primary — retrying would just fail the same way
+
     t0 = time.time()
     try:
         text, in_tok, out_tok = _dispatch(provider, model, prompt, timeout)
