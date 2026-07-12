@@ -5,7 +5,7 @@ PostSwarm reads the same cache file, so it's pre-populated on open.
 Usage:
     python /path/to/postswarm/hermes/prefetch.py
 """
-import os, sys, json, sqlite3, time
+import sys, json, sqlite3, time
 from pathlib import Path
 from datetime import date
 
@@ -14,17 +14,11 @@ ROOT      = Path(__file__).parent.parent
 DATA_DIR  = ROOT / 'data'
 VOICE_PATH = ROOT / 'VOICE.md'
 
-# Allow importing feed_agent without Flask starting
+# Allow importing feed_agent without Flask starting, and the shared model client
 sys.path.insert(0, str(ROOT / 'agents'))
+sys.path.insert(0, str(ROOT))
 
-from dotenv import load_dotenv
-load_dotenv(ROOT / '.env')
-
-from google import genai
-
-_client = genai.Client(api_key=os.environ['GEMINI_API_KEY'])
-DEFAULT_MODEL  = 'gemini-2.5-flash'
-FALLBACK_MODELS = [DEFAULT_MODEL, 'gemini-2.5-pro']
+from core.model_client import call_model
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -111,32 +105,29 @@ For each of your {count} picks, return:
 
 Return ONLY a valid JSON array of up to {count} objects, sorted by rank ascending. No markdown fences, no preamble."""
 
-    for model_name in FALLBACK_MODELS:
-        try:
-            print(f"[prefetch] Ranking with {model_name}…")
-            response = _client.models.generate_content(model=model_name, contents=prompt)
-            text = response.text.strip()
-            if text.startswith('```'):
-                text = text.split('```')[1]
-                if text.startswith('json'):
-                    text = text[4:]
-                text = text.rsplit('```', 1)[0].strip()
+    try:
+        resp = call_model('editor', prompt)
+        text = resp.text.strip()
+        if text.startswith('```'):
+            text = text.split('```')[1]
+            if text.startswith('json'):
+                text = text[4:]
+            text = text.rsplit('```', 1)[0].strip()
 
-            picks_raw = json.loads(text)
-            ALLOWED_AI_FIELDS = {'rank', 'index', 'why_matters', 'angle', 'novelty', 'format', 'excerpt'}
-            picks = []
-            for p in picks_raw:
-                idx = p.get('index', -1)
-                if isinstance(idx, int) and 0 <= idx < len(items):
-                    safe_p = {k: p[k] for k in ALLOWED_AI_FIELDS if k in p}
-                    picks.append({**items[idx], **safe_p})
+        picks_raw = json.loads(text)
+        ALLOWED_AI_FIELDS = {'rank', 'index', 'why_matters', 'angle', 'novelty', 'format', 'excerpt'}
+        picks = []
+        for p in picks_raw:
+            idx = p.get('index', -1)
+            if isinstance(idx, int) and 0 <= idx < len(items):
+                safe_p = {k: p[k] for k in ALLOWED_AI_FIELDS if k in p}
+                picks.append({**items[idx], **safe_p})
 
-            print(f"[prefetch] ✓ {len(picks)} picks selected via {model_name}")
-            return picks
-        except Exception as e:
-            print(f"[prefetch] [{model_name}] failed: {e}")
-
-    return []
+        print(f"[prefetch] ✓ {len(picks)} picks selected via {resp.provider}/{resp.model}")
+        return picks
+    except Exception as e:
+        print(f"[prefetch] ranking failed: {type(e).__name__}: {e}")
+        return []
 
 
 def save_digest(items, picks):
