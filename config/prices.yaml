@@ -1,0 +1,22 @@
+# Editable price table, USD per 1,000 tokens. core/model_client.py looks
+# models up here to estimate cost_usd — nothing here is hardcoded in code.
+# A (provider, model) pair missing from this file just means cost_usd comes
+# back as None instead of a guess. Prices are approximate/list-price and
+# will drift — update as providers change theirs.
+
+gemini:
+  gemini-2.5-flash:        { input_per_1k: 0.00003,  output_per_1k: 0.00025 }
+  gemini-2.5-pro:          { input_per_1k: 0.00125,  output_per_1k: 0.01000 }
+  gemini-3.1-pro-preview:  { input_per_1k: 0.00125,  output_per_1k: 0.01000 }  # TODO: confirm once out of preview pricing
+
+openrouter:
+  # TODO: fill in as reference models are chosen in Phase 2 — OpenRouter
+  # prices vary per model and change often; verify at openrouter.ai/models
+  # before relying on any number here.
+
+anthropic:
+  # TODO: fill in if/when an agent is assigned an Anthropic model.
+
+ollama:
+  # Self/VPS-hosted — no per-token API cost. Left empty on purpose so
+  # cost_usd comes back None rather than a fabricated $0.

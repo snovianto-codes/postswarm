@@ -1,0 +1,24 @@
+# Per-agent model assignment. Any entry may be omitted — a missing role, or
+# this whole file being absent, falls back to gemini-2.5-flash (see
+# core/model_client.py). Shipped here identical to today's hardcoded
+# defaults, so the first run after the model-client refactor behaves
+# exactly like before.
+#
+# provider: gemini | openrouter | anthropic | ollama
+# fallback: optional, used automatically if the primary call fails.
+
+defaults:
+  fallback: { provider: gemini, model: gemini-2.5-flash }
+
+editor:      { provider: gemini, model: gemini-2.5-flash }
+web:         { provider: gemini, model: gemini-2.5-flash }
+fact:        { provider: gemini, model: gemini-2.5-flash }
+devil:       { provider: gemini, model: gemini-2.5-flash }
+perspective: { provider: gemini, model: gemini-2.5-flash }
+hook:        { provider: gemini, model: gemini-2.5-flash }
+writer:
+  provider: gemini
+  model: gemini-2.5-flash
+  fallback: { provider: gemini, model: gemini-2.5-flash }
+
+# feed and research call no LLM directly — nothing to configure for them.
