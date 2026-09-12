@@ -70,6 +70,14 @@ def _load_models_config() -> dict:
     return _load_yaml_cached(_MODELS_CONFIG_PATH, _config_cache)
 
 
+def get_config() -> dict:
+    """Public accessor for the parsed config/models.yaml (cached). Used by
+    core/moa.py to read the `moa` section, which has its own shape
+    (proposers/aggregator) rather than the per-role provider/model/fallback
+    shape `_resolve` expects."""
+    return _load_models_config()
+
+
 def _load_prices_config() -> dict:
     return _load_yaml_cached(_PRICES_CONFIG_PATH, _prices_cache)
 

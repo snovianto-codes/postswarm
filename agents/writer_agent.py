@@ -8,6 +8,7 @@ from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.model_client import call_model, ModelClientError
+from core.moa import draft_moa, MoAError, is_enabled as moa_enabled
 
 app = Flask(__name__)
 CORS(app, resources={r"/run": {"origins": ["http://localhost:5001","http://127.0.0.1:5001","http://localhost:8080","http://127.0.0.1:8080"]}, r"/health": {"origins": "*"}})
@@ -28,24 +29,16 @@ def health():
     return jsonify(status='ok')
 
 
-@app.route('/run', methods=['POST'])
-def run():
-    data = request.json or {}
-    topic     = data.get('topic', '')
-    take      = data.get('take', '')
-    tone      = data.get('tone', 'Skeptical')
-    research  = data.get('research', {})
-    hooks     = data.get('hooks', [])
-    insights  = data.get('insights', [])
-    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
-    DEFAULT_MODEL = FALLBACK_MODEL
-    model     = data.get('model', DEFAULT_MODEL)
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_MODEL
-    role      = data.get('role', 'People Manager')
-    post_type = data.get('post_type', 'opinion')  # 'opinion' or 'repost'
-    primary_model = model
-    print(f"[Writer Agent] ← Received | model: {model} | Writing {post_type} for: {topic[:50]}...")
+def build_prompt(topic='', take='', tone='Skeptical', research=None, hooks=None,
+                  insights=None, role='People Manager', post_type='opinion'):
+    """Builds the writer prompt from assignment inputs. Factored out of
+    run() so scripts/compare_moa.py can build the same prompt a real
+    request would, without duplicating these templates (see the
+    hermes/prefetch.py prompt-duplication issue from the July audit —
+    not repeating that pattern here)."""
+    research = research or {}
+    hooks = hooks or []
+    insights = insights or []
 
     voice = load_voice()
     verified   = research.get('verified', [])
@@ -152,6 +145,47 @@ SEA/team insights (weave in naturally):
 - Sound like a tired but sharp person who has seen things — not a marketer performing for engagement
 
 Return ONLY the post text. No preamble, no explanation."""
+
+    return prompt
+
+
+@app.route('/run', methods=['POST'])
+def run():
+    data = request.json or {}
+    topic     = data.get('topic', '')
+    take      = data.get('take', '')
+    tone      = data.get('tone', 'Skeptical')
+    research  = data.get('research', {})
+    hooks     = data.get('hooks', [])
+    insights  = data.get('insights', [])
+    ALLOWED_MODELS = {'gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'}
+    DEFAULT_MODEL = FALLBACK_MODEL
+    model     = data.get('model', DEFAULT_MODEL)
+    if model not in ALLOWED_MODELS:
+        model = DEFAULT_MODEL
+    role      = data.get('role', 'People Manager')
+    post_type = data.get('post_type', 'opinion')  # 'opinion' or 'repost'
+    primary_model = model
+    print(f"[Writer Agent] ← Received | model: {model} | Writing {post_type} for: {topic[:50]}...")
+
+    prompt = build_prompt(topic=topic, take=take, tone=tone, research=research,
+                           hooks=hooks, insights=insights, role=role, post_type=post_type)
+
+    if moa_enabled():
+        try:
+            result = draft_moa(prompt)
+        except MoAError as e:
+            print(f"[Writer Agent] [ERROR] MoA drafting failed: {e}")
+            return jsonify(post='', model_used='fallback')
+        post = result.post
+        model_used = f"moa({result.aggregator.model})"
+        proposer_drafts = [
+            {'provider': d.provider, 'model': d.model, 'text': d.text}
+            for d in result.proposer_drafts
+        ]
+        print(f"[Writer Agent] ✓ Post written ({len(post.split())} words) via MoA "
+              f"({len(result.proposer_drafts)} proposers → {result.aggregator.model})")
+        return jsonify(post=post, model_used=model_used, proposer_drafts=proposer_drafts)
 
     try:
         resp = call_model('writer', prompt, request_model=primary_model)

@@ -318,11 +318,13 @@ def make_repost(topic, take, tone, model, role):
         writer_resp = r.json()
         final_post  = writer_resp.get('post', '')
         model_used  = writer_resp.get('model_used', model)
+        proposer_drafts = writer_resp.get('proposer_drafts', [])
         elapsed = int((time.time() - t0) * 1000)
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'DONE', 'elapsed': elapsed})
         yield sse({'type': 'agent_detail', 'agent': 'writer', 'data': {
             'word_count': len(final_post.split()),
             'model_used': model_used,
+            'proposer_drafts': proposer_drafts,
         }})
         print(f"[{ts()}] [Orchestrator] ✅ REPOST DONE — {elapsed}ms — {len(final_post.split())} words")
     except Exception as e:
@@ -512,12 +514,14 @@ def make_pipeline(topic, take, tone, model='gemini-2.5-flash', role='People Mana
         writer_resp = r.json()
         final_post  = writer_resp.get('post', '')
         model_used  = writer_resp.get('model_used', model)
+        proposer_drafts = writer_resp.get('proposer_drafts', [])
         elapsed = int((time.time() - t2) * 1000)
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'RUNNING', 'log': 'Applying voice and tone…'})
         yield sse({'type': 'agent_status', 'agent': 'writer', 'status': 'DONE', 'elapsed': elapsed})
         yield sse({'type': 'agent_detail', 'agent': 'writer', 'data': {
             'word_count': len(final_post.split()),
             'model_used': model_used,
+            'proposer_drafts': proposer_drafts,
         }})
         print(f"[{ts()}] [Orchestrator]    ✓ Writer DONE ({elapsed}ms) — {len(final_post.split())} words via {model_used}")
     except Exception as e:

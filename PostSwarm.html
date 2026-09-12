@@ -372,7 +372,16 @@ function OutputPanel({ post, totalMs, onRegenerate, modelFallback }) {
           7 agents · {(totalMs/1000).toFixed(1)}s
         </span>
       </div>
-      {modelFallback && (
+      {modelFallback && (modelFallback.isMoa ? (
+        <div style={{display:'flex', alignItems:'center', gap:8, padding:'8px 20px',
+          background:'rgba(139,92,246,.08)', borderBottom:'1px solid rgba(139,92,246,.2)'}}>
+          <span style={{fontSize:13}}>✨</span>
+          <span style={{fontSize:12, color:'#a78bfa', lineHeight:1.5}}>
+            Drafted via MoA ensemble — multiple models proposed, then merged by{' '}
+            <strong style={{color:'#c4b5fd'}}>{modelFallback.used.replace(/^moa\(|\)$/g, '')}</strong>.
+          </span>
+        </div>
+      ) : (
         <div style={{display:'flex', alignItems:'center', gap:8, padding:'8px 20px',
           background:'rgba(180,83,9,.08)', borderBottom:'1px solid rgba(180,83,9,.2)'}}>
           <span style={{fontSize:13}}>⚠️</span>
@@ -382,7 +391,7 @@ function OutputPanel({ post, totalMs, onRegenerate, modelFallback }) {
             <span style={{color:'#92680a'}}>Enable billing on Google AI to use Pro.</span>
           </span>
         </div>
-      )}
+      ))}
       <div className="px-5 py-5">
         <pre className="text-[13.5px] leading-[1.78] text-[#c8c8c8] whitespace-pre-wrap font-sans">{post}</pre>
       </div>
@@ -485,9 +494,28 @@ function DetailPanel({ agentId, detail }) {
       </div>
     ),
     writer: () => (
-      <div style={{display:'flex', gap:16, padding:'6px 0'}}>
-        {row('Words', String(detail.word_count), '#10b981')}
-        {row('Model', detail.model_used, '#c4b5fd')}
+      <div style={{display:'flex', flexDirection:'column', gap:0}}>
+        <div style={{display:'flex', gap:16, padding:'6px 0'}}>
+          {row('Words', String(detail.word_count), '#10b981')}
+          {row('Model', detail.model_used, '#c4b5fd')}
+        </div>
+        {detail.proposer_drafts?.length > 0 && (
+          <div style={{paddingTop:6}}>
+            <div style={{fontSize:10, fontWeight:600, color:'#444', letterSpacing:'.06em',
+              textTransform:'uppercase', marginBottom:6}}>Drafts Before Merge</div>
+            {detail.proposer_drafts.map((d, i) => (
+              <div key={i} style={{padding:'8px 10px', marginBottom:6, background:'#161616',
+                borderRadius:6, border:'1px solid #1f1f1f'}}>
+                <div style={{fontSize:10, color:'#a78bfa', fontFamily:'monospace', marginBottom:4}}>
+                  {d.provider}/{d.model}
+                </div>
+                <div style={{fontSize:11.5, color:'#999', lineHeight:1.65, whiteSpace:'pre-wrap'}}>
+                  {d.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     ),
     research: () => null,
@@ -1132,8 +1160,11 @@ function App() {
         setFinalPost(msg.post || '');
         setTotalMs(Date.now() - t0Ref.current);
         if (msg.model_requested && msg.model_used && msg.model_used !== msg.model_requested && msg.model_used !== 'fallback') {
-          setModelFallback({ requested: msg.model_requested, used: msg.model_used });
-          setToast({ msg: `⚠ ${MODELS.find(m=>m.id===msg.model_requested)?.label||msg.model_requested} quota exceeded — used ${MODELS.find(m=>m.id===msg.model_used)?.label||msg.model_used} instead`, color: '#f59e0b' });
+          const isMoa = msg.model_used.startsWith('moa(');
+          setModelFallback({ requested: msg.model_requested, used: msg.model_used, isMoa });
+          setToast(isMoa
+            ? { msg: `✨ Drafted via MoA ensemble — merged by ${msg.model_used.replace(/^moa\(|\)$/g, '')}`, color: '#8b5cf6' }
+            : { msg: `⚠ ${MODELS.find(m=>m.id===msg.model_requested)?.label||msg.model_requested} quota exceeded — used ${MODELS.find(m=>m.id===msg.model_used)?.label||msg.model_used} instead`, color: '#f59e0b' });
           setTimeout(() => setToast(null), 6000);
         }
         setPhase('done');

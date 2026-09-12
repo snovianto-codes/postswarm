@@ -22,3 +22,14 @@ writer:
   fallback: { provider: gemini, model: gemini-2.5-flash }
 
 # feed and research call no LLM directly — nothing to configure for them.
+
+# Phase 2 — MoA (Mixture-of-Agents) drafting for the writer role. Off by
+# default: run scripts/compare_moa.py and confirm the ensemble draft is
+# actually better before flipping this to true. When false, writer_agent.py
+# uses the single `writer` entry above exactly as before.
+moa:
+  enabled: true
+  proposers:
+    - { provider: gemini, model: gemini-2.5-flash }
+    - { provider: gemini, model: gemini-2.5-pro }
+  aggregator: { provider: gemini, model: gemini-2.5-pro }
