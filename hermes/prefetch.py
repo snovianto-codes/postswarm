@@ -62,7 +62,7 @@ def rank_articles(items, role='People Manager'):
 
     voice        = load_voice()
     recent       = recent_posted_titles()
-    count        = min(10, len(items))
+    count        = min(15, len(items))
     items_text   = '\n'.join(
         f"[{i}] (Tier {it.get('tier', 3)} · {it['source']}) "
         f"{it['title'][:120]} — {it.get('summary', '')[:180]}"

@@ -9,15 +9,15 @@ A multi-agent system for LinkedIn content — surfaces the day's most relevant A
 ## What it does
 
 ### Today's Brief
-Monitors 17 RSS sources across AI labs, tech media, and Singapore/SEA outlets. Every morning (or on demand), an editor agent ranks the top 10 stories using Gemini — scored by relevance to your role, SEA angle, novelty vs recent posts, and conversation potential. One click drafts a post from any story.
+Monitors 26 RSS sources across AI labs, tech media, and Singapore/SEA outlets. Every morning (or on demand), an editor agent ranks the top 15 stories using Gemini — scored by relevance to your role, SEA angle, novelty vs recent posts, and conversation potential. One click drafts a post from any story.
 
 ### Write Post
 Give it a topic or paste a URL. Nine agents coordinate to produce a LinkedIn post:
 
 ```
 Orchestrator (port 8080)
-├── Feed Agent   (5008)  — RSS crawler, 17 sources, SQLite dedup
-├── Editor Agent (5009)  — ranks stories via Gemini, top 10 picks
+├── Feed Agent   (5008)  — RSS crawler, 26 sources, SQLite dedup
+├── Editor Agent (5009)  — ranks stories via Gemini, top 15 picks
 ├── Research Agent (5001)
 │   ├── Web Agent (5002)          — fetches URL / generates research
 │   ├── Fact Checker (5003)       — verifies claims
@@ -25,6 +25,8 @@ Orchestrator (port 8080)
 ├── Perspective Agent (5005)      — SEA / role-specific angle  [parallel]
 ├── Hook Agent (5006)             — 5 opening line variants    [parallel]
 └── Writer Agent (5007)           — assembles the final post
+                                     (single model, or a MoA ensemble —
+                                     see config/models.yaml)
 ```
 
 ---
@@ -68,8 +70,8 @@ Logs in `logs/*.log` (one per agent). If things complete suspiciously fast or sh
 ## Today's Brief
 
 Opens by default. On first load each day, PostSwarm:
-1. Crawls all 17 sources (live progress bar shows each feed as it's checked)
-2. Sends fresh stories to the Editor Agent (Gemini ranks top 10)
+1. Crawls all 26 sources (live progress bar shows each feed as it's checked)
+2. Sends fresh stories to the Editor Agent (Gemini ranks top 15)
 3. Caches the result — instant on subsequent opens the same day
 
 Each story card shows:
@@ -79,8 +81,10 @@ Each story card shows:
 - **Novelty score** — how different it is from your recent posts
 - **Format badge** — repost (short reaction) or opinion (full post)
 
-**Draft my opinion** → full 7-agent pipeline (~25s), 100–160 words, your complete take with research, counter-points, and SEA angle  
-**Draft repost** → writer-only fast path (~5-10s), 50–80 word reaction + source link, no research pipeline
+**Draft my opinion** → full 7-agent pipeline, 100–160 words, your complete take with research, counter-points, and SEA angle  
+**Draft repost** → writer-only fast path, 50–80 word reaction + source link, no research pipeline
+
+Timing depends on whether MoA drafting is on (`config/models.yaml` → `moa.enabled`). Off: opinion ~25s, repost ~5-10s. On: add ~25-30s to whichever path you use, since the Writer stage runs 2 model calls plus an aggregator call instead of one — applies to both opinion and repost.
 
 Scroll below the picks to **Browse all stories** — every item fetched, grouped by source tier, with dismiss and repost buttons.
 
@@ -91,12 +95,12 @@ Scroll below the picks to **Browse all stories** — every item fetched, grouped
 | Tier | Sources | Window |
 |------|---------|--------|
 | 1 — Lab blogs | OpenAI, Google AI, Google DeepMind, Hugging Face | 72h |
-| 2 — Curated digests | TLDR AI, Ben's Bites, MarkTechPost | 48h |
-| 3 — Editorial / analysis | MIT Tech Review, TechCrunch, Mollick, Simon Willison, Interconnects, Latent Space, VentureBeat | 36h |
+| 2 — Curated digests | TLDR AI, Ben's Bites, MarkTechPost, Import AI | 48h |
+| 3 — Editorial / analysis | MIT Tech Review, TechCrunch, TC Asia, Mollick, Simon Willison, Interconnects, Latent Space, VentureBeat, Ars Technica AI, The Verge AI, Wired AI, AI News, The Gradient | 36h |
 | 4 — Community | Hacker News AI (≥80 points) | 36h |
-| 5 — Singapore / SEA | Tech Wire Asia, CNA Tech | 36h |
+| 5 — Singapore / SEA | Tech Wire Asia, CNA Tech, Straits Times AI, Business Times Singapore Tech | 36h |
 
-Tier 1 sources use a wider 72-hour window since they publish infrequently. All sources verified live as of May 2026.
+26 sources total. Tier 1 sources use a wider 72-hour window since they publish infrequently. All sources verified live as of September 2026.
 
 ---
 
@@ -108,9 +112,34 @@ Tier 1 sources use a wider 72-hour window since they publish infrequently. All s
 | **My Take** | Your angle or opinion — shapes the whole post |
 | **Tone** | Skeptical / Curious / Excited / Provocative / Balanced |
 | **Role** | Professional perspective (People Manager, Engineer, CTO…) |
-| **Model** | Gemini model — Gemini 2.5 Flash (default) or 2.5 Pro for more nuanced drafts |
+| **Model** | Gemini model — Gemini 2.5 Flash (default) or 2.5 Pro for more nuanced drafts. Ignored by the Writer stage when MoA is enabled (see below) — the ensemble's own proposer/aggregator models take over regardless of this selection |
 
-Click **View details** on any completed agent card to see exactly what it produced.
+Click **View details** on any completed agent card to see exactly what it produced. When MoA drafting is enabled, the Writer Agent's details also show a **Drafts Before Merge** section with each proposer's full draft, so you can see what the aggregator was choosing between.
+
+---
+
+## Multi-model drafting (MoA)
+
+The Writer Agent can draft via a small Mixture-of-Agents ensemble instead of one model call: two Gemini proposers draft independently in parallel, then an aggregator model merges or picks the stronger one. Configured in `config/models.yaml`:
+
+```yaml
+moa:
+  enabled: false   # off by default — flip to true to use it
+  proposers:
+    - { provider: gemini, model: gemini-2.5-flash }
+    - { provider: gemini, model: gemini-2.5-pro }
+  aggregator: { provider: gemini, model: gemini-2.5-pro }
+```
+
+Before enabling it, run the comparison tool with your own API key — it prints the single-model baseline, each proposer's draft, and the merged result side by side for a couple of sample topics, so you can judge whether the quality gain is worth the extra latency and cost:
+
+```bash
+python3 scripts/compare_moa.py
+```
+
+In testing, MoA drafts took ~3.5x longer and ~90x more per call (still fractions of a cent) than a single call, for a real but modest quality improvement — sharper hooks, more specific reasoning, not a dramatic jump. It's a judgment call per use case, which is why it's a config toggle rather than always-on.
+
+The wider `core/model_client.py` layer also supports OpenRouter, Anthropic, and Ollama models (any agent's `provider`/`model` in `config/models.yaml` can point at one), but only Gemini is configured today — the other providers need their API key added to `.env` first.
 
 ---
 
@@ -141,14 +170,25 @@ postswarm/
 ├── agents/
 │   ├── orchestrator.py           # Port 8080 — serves HTML + pipeline coordinator
 │   ├── feed_agent.py             # Port 5008 — RSS crawler, SQLite dedup, inspiration store
-│   ├── editor_agent.py           # Port 5009 — ranks feed items, returns top 10 picks
+│   ├── editor_agent.py           # Port 5009 — ranks feed items, returns top 15 picks
 │   ├── research_agent.py         # Port 5001
 │   ├── web_agent.py              # Port 5002
 │   ├── factchecker_agent.py      # Port 5003
 │   ├── devils_advocate_agent.py  # Port 5004
 │   ├── perspective_agent.py      # Port 5005
 │   ├── hook_agent.py             # Port 5006
-│   └── writer_agent.py           # Port 5007
+│   └── writer_agent.py           # Port 5007 — single call, or MoA ensemble
+├── core/
+│   ├── model_client.py           # Shared provider-agnostic LLM dispatch + fallback
+│   └── moa.py                    # Mixture-of-Agents proposer/aggregator logic
+├── config/
+│   ├── models.yaml                # Per-role model assignment + MoA settings
+│   └── prices.yaml                # Per-model $/1k-token table for cost estimates
+├── scripts/
+│   └── compare_moa.py            # Single-model vs MoA side-by-side comparison tool
+├── tests/                        # pytest — model_client fallback logic, MoA fan-out/failure handling
+├── docs/
+│   └── audit-2026-07.md          # Dated architecture audit — historical snapshot, not live docs
 ├── hermes/                       # Standalone scripts for Hermes AI agent integration
 │   └── prefetch.py               # Pre-fetches and ranks articles; run via Hermes or cron before opening PostSwarm
 ├── PostSwarm.html                # Single-file React frontend (no build step)
@@ -167,10 +207,11 @@ postswarm/
 ## Stack
 
 - **Backend**: Python 3.11+, Flask, feedparser
-- **AI**: Google Gemini (`google-genai` SDK) — 2.5 Flash default, 2.5 Pro available
+- **AI**: Google Gemini (`google-genai` SDK) — 2.5 Flash default, 2.5 Pro available, optional MoA ensemble. `core/model_client.py` also supports OpenRouter/Anthropic/Ollama per-role, not yet configured
 - **Frontend**: React 18 (CDN), vanilla SSE — no build step needed
 - **Storage**: SQLite (`data/seen.db`) for feed dedup and inspiration store
-- **Concurrency**: `ThreadPoolExecutor` for parallel agent calls
+- **Concurrency**: `ThreadPoolExecutor` for parallel agent calls (research fan-out, hook/perspective, MoA proposers)
+- **Testing**: pytest — mocked unit coverage for model dispatch/fallback and MoA logic, no live API calls
 
 ---
 
@@ -204,7 +245,8 @@ Designed for **local use only**.
 ## What's next
 
 - **Past posts memory** — feed your actual LinkedIn history so the editor avoids repetition automatically
-- **Multi-model routing** — Claude for writing, Gemini for research
+- **Cross-provider MoA** — bring Claude or OpenRouter models into the ensemble alongside Gemini (the provider plumbing already exists in `core/model_client.py`; just needs an API key and a `config/models.yaml` entry)
+- **Governance/audit logging** — persist which model drafted a post, what Fact Checker/Devil's Advocate flagged, and when it was marked posted, none of which is recoverable from stored data today
 - **Auto-schedule** — queue and publish directly to LinkedIn
 - **Judge agent** — scores drafts before surfacing them
 - **Slack/Telegram digest** — push the daily brief to a channel instead of opening the app
