@@ -1,5 +1,5 @@
 """Feed Agent — port 5008
-Pulls AI news from 19 RSS sources. Dedupes via SQLite.
+Pulls AI news from 26 RSS sources. Dedupes via SQLite.
 Also handles /inspiration endpoint for bookmarklet captures.
 """
 import os, json, time, hashlib, sqlite3, re, socket, traceback
@@ -40,6 +40,7 @@ SOURCES = [
     (2, 'TLDR AI',        'https://tldr.tech/api/rss/ai'),
     (2, "Ben's Bites",    'https://www.bensbites.com/feed'),
     (2, 'MarkTechPost',   'https://www.marktechpost.com/feed/'),
+    (2, 'Import AI',      'https://importai.substack.com/feed'),
     (3, 'MIT Tech Review','https://www.technologyreview.com/topic/artificial-intelligence/feed/'),
     (3, 'TechCrunch',     'https://techcrunch.com/feed/'),
     (3, 'TC Asia',        'https://techcrunch.com/tag/asia/feed/'),
@@ -48,9 +49,16 @@ SOURCES = [
     (3, 'Interconnects',  'https://www.interconnects.ai/feed'),
     (3, 'Latent Space',   'https://www.latent.space/feed'),
     (3, 'VentureBeat',    'https://venturebeat.com/feed/'),
+    (3, 'Ars Technica AI','https://arstechnica.com/ai/feed/'),
+    (3, 'The Verge AI',   'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml'),
+    (3, 'Wired AI',       'https://www.wired.com/feed/tag/ai/latest/rss'),
+    (3, 'AI News',        'https://www.artificialintelligence-news.com/feed/'),
+    (3, 'The Gradient',   'https://thegradient.pub/rss/'),
     (4, 'HN AI',          'https://hnrss.org/newest?q=AI+OR+LLM&points=80'),
     (5, 'Tech Wire Asia', 'https://techwireasia.com/feed/'),
     (5, 'CNA Tech',       'https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6511'),
+    (5, 'Straits Times AI','https://www.straitstimes.com/tags/artificial-intelligence/rss.xml'),
+    (5, 'BT Singapore Tech','https://www.businesstimes.com.sg/rss/technology'),
 ]
 
 _TAG_RE = re.compile(r'<[^>]+>')

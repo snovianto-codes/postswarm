@@ -1,5 +1,5 @@
 """Editor Agent — port 5009
-Scores raw feed items → top 5 picks with why_matters, angle, novelty.
+Scores raw feed items → top 15 picks with why_matters, angle, novelty.
 """
 import os, sys, json, traceback
 from pathlib import Path
@@ -62,7 +62,7 @@ def rank():
     print(f"[Editor Agent] Ranking {len(items)} items for '{role}'…")
 
     voice       = load_voice()
-    count       = min(10, len(items))
+    count       = min(15, len(items))
     items_text  = '\n'.join(
         f"[{i}] (Tier {it.get('tier', 3)} · {it['source']}) "
         f"{it['title'][:120]} — {it.get('summary', '')[:180]}"
